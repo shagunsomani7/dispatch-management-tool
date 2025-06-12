@@ -20,13 +20,35 @@ class ApiService {
     };
 
     try {
+      console.log(`API Request: ${config.method || 'GET'} ${url}`);
+      if (config.body) {
+        console.log('Request body:', config.body);
+      }
+      
       const response = await fetch(url, config);
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        // Try to get error details from response
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          if (errorData.message) {
+            errorMessage = errorData.message;
+          }
+          if (errorData.error) {
+            errorMessage += ` - ${errorData.error}`;
+          }
+          console.error('Server error response:', errorData);
+        } catch (parseError) {
+          console.error('Could not parse error response:', parseError);
+        }
+        
+        throw new Error(errorMessage);
       }
       
-      return await response.json();
+      const result = await response.json();
+      console.log('API Response:', result);
+      return result;
     } catch (error) {
       console.error('API request failed:', error);
       throw error;
@@ -87,6 +109,12 @@ class ApiService {
 
   async deleteSlab(id: string): Promise<void> {
     return this.request<void>(`/slabs/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async clearAllSlabs(): Promise<void> {
+    return this.request<void>('/slabs/clear-all', {
       method: 'DELETE',
     });
   }
@@ -166,12 +194,14 @@ class ApiService {
     message: string;
     timestamp: string;
     version: string;
+    database?: string;
   }> {
     return this.request<{
       status: string;
       message: string;
       timestamp: string;
       version: string;
+      database?: string;
     }>('/health');
   }
 }

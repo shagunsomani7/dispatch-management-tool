@@ -1,5 +1,11 @@
 export interface SlabMeasurement {
   id: string;
+  
+  // Dispatch batch information
+  dispatchId: string;
+  dispatchTimestamp: Date;
+  
+  // Existing fields
   materialName: string;
   lotNumber: string;
   dispatchVehicleNumber: string;

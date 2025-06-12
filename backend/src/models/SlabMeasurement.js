@@ -19,6 +19,20 @@ const cornerDeductionSchema = new mongoose.Schema({
 });
 
 const slabMeasurementSchema = new mongoose.Schema({
+    // Dispatch batch information
+    dispatchId: {
+        type: String,
+        required: true,
+        trim: true,
+        index: true
+    },
+    dispatchTimestamp: {
+        type: Date,
+        required: true,
+        index: true
+    },
+
+    // Existing fields
     materialName: {
         type: String,
         required: true,

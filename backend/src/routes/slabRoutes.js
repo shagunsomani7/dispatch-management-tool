@@ -58,6 +58,7 @@ router.post('/', async(req, res) => {
 
         // Validate required fields
         const requiredFields = [
+            'dispatchId', 'dispatchTimestamp',
             'materialName', 'lotNumber', 'dispatchVehicleNumber',
             'supervisorName', 'partyName', 'slabNumber',
             'thickness', 'length', 'height', 'measurementUnit'
@@ -141,6 +142,23 @@ router.delete('/:id', async(req, res) => {
     } catch (error) {
         res.status(500).json({
             message: 'Error deleting slab measurement',
+            error: error.message
+        });
+    }
+});
+
+// DELETE /api/slabs/clear-all - Delete all slab measurements
+router.delete('/clear-all', async(req, res) => {
+    try {
+        const result = await SlabMeasurement.deleteMany({});
+
+        res.json({
+            message: 'All slab measurements cleared successfully',
+            deletedCount: result.deletedCount
+        });
+    } catch (error) {
+        res.status(500).json({
+            message: 'Error clearing all slab measurements',
             error: error.message
         });
     }
