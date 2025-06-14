@@ -1,6 +1,9 @@
 import React from 'react';
+import { useAuth } from '../../App';
 
 const Header = () => {
+  const { user, logout } = useAuth();
+
   return (
     <header className="bg-white shadow-sm border-b border-gray-200">
       <div className="px-6 py-4">
@@ -15,10 +18,16 @@ const Header = () => {
           </div>
           <div className="flex items-center space-x-4">
             <div className="text-sm text-gray-600">
-              Welcome, Supervisor
+              Welcome, {user?.username} ({user?.role})
             </div>
+            <button
+              onClick={logout}
+              className="text-sm text-gray-600 hover:text-gray-900"
+            >
+              Logout
+            </button>
             <div className="w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
-              S
+              {user?.username.charAt(0).toUpperCase()}
             </div>
           </div>
         </div>

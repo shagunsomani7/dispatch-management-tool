@@ -243,10 +243,32 @@ class ApiService {
 
   // Auth API
   async login(username: string, password: string): Promise<{ token: string; user: { username: string; role: string } }> {
-    return this.request<{ token: string; user: { username: string; role: string } }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ username, password }),
-    });
+    try {
+      console.log('Attempting login with:', { username });
+      
+      const response = await fetch(`${this.baseUrl}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password }),
+      });
+
+      const data = await response.json();
+      console.log('Login response:', data);
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Login failed');
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Login failed:', error);
+      if (error instanceof Error) {
+        throw new Error(`Login failed: ${error.message}`);
+      }
+      throw new Error('Login failed: Unknown error occurred');
+    }
   }
 
   setToken(token: string) {

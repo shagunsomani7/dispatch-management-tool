@@ -1,16 +1,23 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Layout from './components/layout/Layout';
 import Dashboard from './components/Dashboard';
 import SlabEntry from './components/forms/SlabEntry';
 import SlabList from './components/pages/SlabList';
 import Reports from './components/reports/Reports';
+import Login from './components/auth/Login';
 import { apiService } from './services/api';
 
 interface AuthProviderProps {
   children: ReactNode;
 }
-type User = { username: string } | null;
+
+type UserRole = 'admin' | 'supervisor';
+
+type User = { 
+  username: string;
+  role: UserRole;
+} | null;
 
 const AuthContext = createContext<{
   user: User;
@@ -24,23 +31,21 @@ function AuthProvider({ children }: AuthProviderProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = apiService.getToken();
-    if (token) {
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        setUser({ username: payload.username });
-      } catch {
-        setUser(null);
-      }
-    }
+    // Clear any existing token on initial load
+    apiService.clearToken();
+    setUser(null);
     setLoading(false);
   }, []);
 
   const login = async (username: string, password: string) => {
     const res = await apiService.login(username, password);
     apiService.setToken(res.token);
-    setUser({ username: res.user.username });
+    setUser({ 
+      username: res.user.username, 
+      role: res.user.role as UserRole 
+    });
   };
+
   const logout = () => {
     apiService.clearToken();
     setUser(null);
@@ -59,64 +64,66 @@ export function useAuth() {
   return ctx;
 }
 
-function RequireAuth({ children }: { children: ReactNode }) {
+function RequireAuth({ children, requireAdmin = false }: { children: ReactNode; requireAdmin?: boolean }) {
   const { user, loading } = useAuth();
   const location = useLocation();
-  if (loading) return null;
-  if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-lg">Loading...</div>
+      </div>
+    );
+  }
+  
+  if (!user) {
+    // Force redirect to login
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  if (requireAdmin && user.role !== 'admin') {
+    return <Navigate to="/entry" replace />;
+  }
+
   return <>{children}</>;
-}
-
-function Login() {
-  const { login, user } = useAuth();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    if (user) {
-      if (user.username === 'admin') navigate('/');
-      else navigate('/entry');
-    }
-  }, [user, navigate]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    try {
-      await login(username, password);
-      // Navigation will be handled by useEffect
-    } catch (err) {
-      setError('Invalid username or password');
-    }
-  };
-  return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50">
-      <form onSubmit={handleSubmit} className="bg-white p-8 rounded shadow-md w-96 space-y-4">
-        <h2 className="text-2xl font-bold mb-4">Login</h2>
-        {error && <div className="text-red-600">{error}</div>}
-        <input className="input-field w-full" placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} />
-        <input className="input-field w-full" type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} />
-        <button className="btn-primary w-full" type="submit">Login</button>
-      </form>
-    </div>
-  );
 }
 
 function App() {
   return (
     <AuthProvider>
       <Router>
-        <Layout>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
-            <Route path="/slabs" element={<RequireAuth><SlabList /></RequireAuth>} />
-            <Route path="/reports" element={<RequireAuth><Reports /></RequireAuth>} />
-            <Route path="/entry" element={<RequireAuth><SlabEntry /></RequireAuth>} />
-          </Routes>
-        </Layout>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/" element={
+            <RequireAuth requireAdmin>
+              <Layout>
+                <Dashboard />
+              </Layout>
+            </RequireAuth>
+          } />
+          <Route path="/slabs" element={
+            <RequireAuth requireAdmin>
+              <Layout>
+                <SlabList />
+              </Layout>
+            </RequireAuth>
+          } />
+          <Route path="/reports" element={
+            <RequireAuth requireAdmin>
+              <Layout>
+                <Reports />
+              </Layout>
+            </RequireAuth>
+          } />
+          <Route path="/entry" element={
+            <RequireAuth>
+              <Layout>
+                <SlabEntry />
+              </Layout>
+            </RequireAuth>
+          } />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
       </Router>
     </AuthProvider>
   );
