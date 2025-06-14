@@ -10,57 +10,93 @@ declare const process: {
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 class ApiService {
+  private baseUrl: string;
+
+  constructor() {
+    this.baseUrl = API_BASE_URL;
+  }
+
+  getToken(): string | null {
+    return localStorage.getItem('token');
+  }
+
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const url = `${API_BASE_URL}${endpoint}`;
-    const config: RequestInit = {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      ...options,
+    const token = this.getToken();
+    if (!token) {
+      throw new Error('No authentication token found. Please log in.');
+    }
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+      ...options.headers,
     };
 
     try {
-      console.log(`API Request: ${config.method || 'GET'} ${url}`);
-      if (config.body) {
-        console.log('Request body:', config.body);
-      }
-      
-      const response = await fetch(url, config);
+      console.log('Making API request to:', `${this.baseUrl}${endpoint}`);
+      console.log('Request options:', {
+        method: options.method,
+        headers,
+        body: options.body ? JSON.parse(options.body as string) : undefined
+      });
+
+      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+        ...options,
+        headers,
+      });
+
+      const responseData = await response.json().catch(() => ({}));
       
       if (!response.ok) {
-        // Try to get error details from response
-        let errorMessage = `HTTP error! status: ${response.status}`;
-        try {
-          const errorData = await response.json();
-          if (errorData.message) {
-            errorMessage = errorData.message;
-          }
-          if (errorData.error) {
-            errorMessage += ` - ${errorData.error}`;
-          }
-          console.error('Server error response:', errorData);
-        } catch (parseError) {
-          console.error('Could not parse error response:', parseError);
-        }
-        
-        throw new Error(errorMessage);
+        console.error('API Error Response:', {
+          status: response.status,
+          statusText: response.statusText,
+          data: responseData
+        });
+        throw new Error(responseData.message || `HTTP error! status: ${response.status}`);
       }
-      
-      const result = await response.json();
-      console.log('API Response:', result);
-      return result;
+
+      console.log('API Success Response:', responseData);
+      return responseData;
     } catch (error) {
       console.error('API request failed:', error);
-      throw error;
+      if (error instanceof Error) {
+        throw new Error(`API request failed: ${error.message}`);
+      }
+      throw new Error('API request failed: Unknown error occurred');
     }
   }
 
   // Slab Measurements API
   async createSlab(slabData: Omit<SlabMeasurement, 'id' | 'timestamp'>): Promise<SlabMeasurement> {
-    return this.request<SlabMeasurement>('/slabs', {
-      method: 'POST',
-      body: JSON.stringify(slabData),
-    });
+    console.log('Creating slab with data:', JSON.stringify(slabData, null, 2)); // Debug log
+    try {
+      // Remove any id fields from cornerDeductions
+      const cleanedData = {
+        ...slabData,
+        cornerDeductions: slabData.cornerDeductions.map(({ length, height, area }) => ({
+          length,
+          height,
+          area
+        }))
+      };
+      
+      console.log('Sending cleaned data:', JSON.stringify(cleanedData, null, 2));
+      
+      const response = await this.request<SlabMeasurement>('/slabs', {
+        method: 'POST',
+        body: JSON.stringify(cleanedData),
+      });
+      
+      console.log('Slab created successfully:', response);
+      return response;
+    } catch (error) {
+      console.error('Error in createSlab:', error);
+      if (error instanceof Error) {
+        throw new Error(`Failed to create slab: ${error.message}`);
+      }
+      throw new Error('Failed to create slab: Unknown error occurred');
+    }
   }
 
   async getSlabs(params?: {
@@ -203,6 +239,22 @@ class ApiService {
       version: string;
       database?: string;
     }>('/health');
+  }
+
+  // Auth API
+  async login(username: string, password: string): Promise<{ token: string; user: { username: string; role: string } }> {
+    return this.request<{ token: string; user: { username: string; role: string } }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+  }
+
+  setToken(token: string) {
+    localStorage.setItem('token', token);
+  }
+
+  clearToken() {
+    localStorage.removeItem('token');
   }
 }
 

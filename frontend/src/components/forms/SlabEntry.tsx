@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { MeasurementUnit, CornerDeduction, SlabMeasurement } from '../../types';
+import React, { useState } from 'react';
+import { MeasurementUnit, CornerDeduction } from '../../types';
 import { apiService } from '../../services/api';
-import { jsPDF } from 'jspdf';
+import jsPDF from 'jspdf';
 
 interface SlabFormData {
   id: string;
@@ -66,7 +66,6 @@ const SlabEntry = () => {
   };
 
   const addNewMaterial = () => {
-    console.log('Add new material clicked');
     if (newMaterial.trim() && !materials.includes(newMaterial.trim())) {
       setMaterials(prev => [...prev, newMaterial.trim()]);
       setDispatchInfo(prev => ({ ...prev, materialName: newMaterial.trim() }));
@@ -83,7 +82,6 @@ const SlabEntry = () => {
         [field]: value
       };
       
-      // Recalculate areas
       const slab = updated[slabIndex];
       slab.grossArea = slab.length * slab.height;
       slab.totalDeductionArea = slab.cornerDeductions.reduce((sum, corner) => sum + corner.area, 0);
@@ -102,7 +100,6 @@ const SlabEntry = () => {
       
       updated[slabIndex].cornerDeductions[cornerIndex] = corner;
       
-      // Recalculate slab areas
       const slab = updated[slabIndex];
       slab.grossArea = slab.length * slab.height;
       slab.totalDeductionArea = slab.cornerDeductions.reduce((sum, c) => sum + c.area, 0);
@@ -113,7 +110,6 @@ const SlabEntry = () => {
   };
 
   const copyPreviousSlab = (currentIndex: number) => {
-    console.log('Copy previous slab clicked for index:', currentIndex);
     if (currentIndex > 0) {
       const previousSlab = slabs[currentIndex - 1];
       setSlabs(prev => {
@@ -126,7 +122,6 @@ const SlabEntry = () => {
           cornerDeductions: previousSlab.cornerDeductions.map(corner => ({ ...corner }))
         };
         
-        // Recalculate areas
         const slab = updated[currentIndex];
         slab.grossArea = slab.length * slab.height;
         slab.totalDeductionArea = slab.cornerDeductions.reduce((sum, corner) => sum + corner.area, 0);
@@ -138,7 +133,6 @@ const SlabEntry = () => {
   };
 
   const clearSlab = (slabIndex: number) => {
-    console.log('Clear slab clicked for index:', slabIndex);
     if (window.confirm(`Are you sure you want to clear all measurements for Slab #${slabIndex + 1}?`)) {
       setSlabs(prev => {
         const updated = [...prev];
@@ -163,11 +157,9 @@ const SlabEntry = () => {
   };
 
   const removeSlab = (slabIndex: number) => {
-    console.log('Remove slab clicked for index:', slabIndex);
-    if (slabs.length > 1) { // Keep at least one slab
+    if (slabs.length > 1) { 
       setSlabs(prev => {
         const updated = prev.filter((_, index) => index !== slabIndex);
-        // Renumber remaining slabs
         return updated.map((slab, index) => ({
           ...slab,
           slabNumber: index + 1,
@@ -180,7 +172,6 @@ const SlabEntry = () => {
   };
 
   const clearAllSlabs = () => {
-    console.log('Clear all slabs clicked');
     if (window.confirm('Are you sure you want to clear all slab measurements? This action cannot be undone.')) {
       setSlabs(prev => prev.map((slab, index) => ({
         id: `slab-${index + 1}`,
@@ -202,7 +193,6 @@ const SlabEntry = () => {
   };
 
   const addNewSlab = () => {
-    console.log('Add new slab clicked');
     const newSlabNumber = slabs.length + 1;
     setSlabs(prev => [...prev, {
       id: `slab-${newSlabNumber}`,
@@ -223,18 +213,17 @@ const SlabEntry = () => {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    console.log('Form submitted');
     e.preventDefault();
     
     try {
-      // Validate that required fields are filled
+      // Validate dispatch info
       if (!dispatchInfo.materialName || !dispatchInfo.lotNumber || !dispatchInfo.dispatchVehicleNumber || 
           !dispatchInfo.supervisorName || !dispatchInfo.partyName) {
         alert('Please fill in all dispatch information fields');
         return;
       }
 
-      // Filter out slabs with no measurements
+      // Filter valid slabs
       const validSlabs = slabs.filter(slab => 
         slab.thickness > 0 && slab.length > 0 && slab.height > 0
       );
@@ -243,143 +232,61 @@ const SlabEntry = () => {
         alert('Please enter measurements for at least one slab');
         return;
       }
-
-      // Generate unique dispatch ID and timestamp
-      const dispatchId = `DISPATCH-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      const dispatchTimestamp = new Date();
       
-      console.log(`Creating new dispatch batch: ${dispatchId}`);
-      console.log(`Dispatch timestamp: ${dispatchTimestamp.toISOString()}`);
-      console.log('Saving slabs to database...');
-      
-      // Save each slab to the database with dispatch batch info
       const savedSlabs = [];
       for (let i = 0; i < validSlabs.length; i++) {
         const slab = validSlabs[i];
         
+        // Calculate areas
+        const grossArea = slab.length * slab.height;
+        const totalDeductionArea = slab.cornerDeductions.reduce((total, corner) => {
+          corner.area = corner.length * corner.height;
+          return total + corner.area;
+        }, 0);
+        const netArea = grossArea - totalDeductionArea;
+
+        // Prepare slab data with all required fields
         const slabData = {
-          // Dispatch batch information
-          dispatchId: dispatchId,
-          dispatchTimestamp: dispatchTimestamp,
-          
-          // Existing dispatch info
+          dispatchId: Date.now().toString(),
+          dispatchTimestamp: new Date(),
           materialName: dispatchInfo.materialName,
           lotNumber: dispatchInfo.lotNumber,
           dispatchVehicleNumber: dispatchInfo.dispatchVehicleNumber,
           supervisorName: dispatchInfo.supervisorName,
           partyName: dispatchInfo.partyName,
-          
-          // Slab specific data
           slabNumber: slab.slabNumber,
           thickness: slab.thickness,
           length: slab.length,
           height: slab.height,
-          cornerDeductions: slab.cornerDeductions.map(corner => ({
-            length: corner.length,
-            height: corner.height,
-            area: corner.area
-          })),
+          cornerDeductions: slab.cornerDeductions,
           measurementUnit: dispatchInfo.measurementUnit,
-          grossArea: slab.grossArea,
-          totalDeductionArea: slab.totalDeductionArea,
-          netArea: slab.netArea
-        } as Omit<SlabMeasurement, 'id' | 'timestamp'>;
-
-        console.log(`Attempting to save slab ${slab.slabNumber} for dispatch ${dispatchId}:`, slabData);
+          grossArea,
+          totalDeductionArea,
+          netArea
+        };
         
+        console.log('Saving slab data:', slabData); // Debug log
         try {
           const savedSlab = await apiService.createSlab(slabData);
           savedSlabs.push(savedSlab);
-          console.log(`Slab ${slab.slabNumber} saved successfully:`, savedSlab);
-        } catch (slabError) {
-          console.error(`Error saving slab ${slab.slabNumber}:`, slabError);
-          throw new Error(`Failed to save slab ${slab.slabNumber}: ${slabError instanceof Error ? slabError.message : 'Unknown error'}`);
+        } catch (error) {
+          console.error('Error saving individual slab:', error);
+          if (error instanceof Error) {
+            alert(`Error saving slab ${slab.slabNumber}: ${error.message}`);
+          } else {
+            alert(`Error saving slab ${slab.slabNumber}: Unknown error occurred`);
+          }
+          throw error; // Re-throw to stop the process
         }
       }
-
-      // Show success message with dispatch details
-      const successMessage = `✅ Dispatch saved successfully!\n\n` +
-        `Dispatch ID: ${dispatchId}\n` +
-        `Timestamp: ${dispatchTimestamp.toLocaleString()}\n` +
-        `Slabs saved: ${savedSlabs.length}\n` +
-        `Total net area: ${savedSlabs.reduce((sum, slab) => sum + slab.netArea, 0).toFixed(2)} ${dispatchInfo.measurementUnit}²`;
-      
-      alert(successMessage);
-      
-      // Optional: Reset form or redirect
-      // window.location.reload(); // Uncomment if you want to reset the form
-      
+      alert(`Successfully saved ${savedSlabs.length} slabs to database!`);
     } catch (error) {
       console.error('Error saving slabs:', error);
-      
-      // Provide more detailed error information
-      let errorMessage = 'Error saving slabs to database. ';
-      
       if (error instanceof Error) {
-        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-          errorMessage += 'Cannot connect to server. Please ensure the backend is running on http://localhost:5000';
-        } else if (error.message.includes('400')) {
-          errorMessage += 'Validation error: ' + error.message;
-        } else if (error.message.includes('500')) {
-          errorMessage += 'Server error. Please check the database connection.';
-        } else {
-          errorMessage += error.message;
-        }
+        alert(`Error saving slabs: ${error.message}`);
       } else {
-        errorMessage += 'Unknown error occurred.';
+        alert('Error saving slabs. Please check the console for more details.');
       }
-      
-      errorMessage += '\n\nPlease check the browser console for more details.';
-      
-      alert(errorMessage);
-    }
-  };
-
-  const testDatabaseConnection = async () => {
-    try {
-      console.log('Testing database connection...');
-      const healthResponse = await apiService.healthCheck();
-      console.log('Health check response:', healthResponse);
-      
-      const testSlabData = {
-        dispatchId: 'TEST-DISPATCH-001',
-        dispatchTimestamp: new Date(),
-        materialName: 'Test Material',
-        lotNumber: 'TEST-001',
-        dispatchVehicleNumber: 'TEST-VEH-001',
-        supervisorName: 'Test Supervisor',
-        partyName: 'Test Party',
-        slabNumber: 999,
-        thickness: 10,
-        length: 100,
-        height: 50,
-        cornerDeductions: [
-          { length: 5, height: 5, area: 25 },
-          { length: 0, height: 0, area: 0 },
-          { length: 0, height: 0, area: 0 },
-          { length: 0, height: 0, area: 0 }
-        ],
-        measurementUnit: 'mm' as MeasurementUnit,
-        grossArea: 5000,
-        totalDeductionArea: 25,
-        netArea: 4975
-      } as Omit<SlabMeasurement, 'id' | 'timestamp'>;
-      
-      console.log('Attempting to save test slab:', testSlabData);
-      const savedSlab = await apiService.createSlab(testSlabData);
-      console.log('Test slab saved successfully:', savedSlab);
-      
-      // Clean up test data
-      if (savedSlab.id) {
-        await apiService.deleteSlab(savedSlab.id);
-        console.log('Test slab cleaned up');
-      }
-      
-      alert('✅ Database connection test successful!\n\nThe database is working correctly.');
-    } catch (error) {
-      console.error('Database connection test failed:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      alert(`❌ Database connection test failed:\n\n${errorMessage}\n\nPlease check the console for more details.`);
     }
   };
 
@@ -387,314 +294,322 @@ const SlabEntry = () => {
     return slabs.reduce((total, slab) => total + slab.netArea, 0);
   };
 
-  // PDF Generation Function - Professional Blue Design with Enhanced Styling
   const generatePDF = () => {
-    console.log('Generating PDF...');
-    
-    // Generate dispatch ID for PDF (same format as database)
-    const dispatchId = `DISPATCH-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const dispatchTimestamp = new Date();
-    
-    const pdf = new jsPDF('landscape');
+    const pdf = new jsPDF('landscape'); // Using landscape due to wide table
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
-    let yPosition = 25;
+    
+    // Margins (in points)
+    const margin = 40; // Approx 14mm
+    const contentWidth = pageWidth - 2 * margin;
+    let yPosition = margin;
 
-    // Helper functions
+    // Colors
+    const PRIMARY_COLOR = '#2962FF'; // Original Blue
+    const TEXT_COLOR_DARK = '#333333';
+    const TEXT_COLOR_LIGHT = '#FFFFFF';
+    const BORDER_COLOR = '#DDDDDD';
+    const ROW_ALT_COLOR = '#F5F5F5'; // Light gray for alternating rows
+
+    // Helper to format date
     const formatDate = (date: Date) => {
       const day = date.getDate().toString().padStart(2, '0');
       const month = (date.getMonth() + 1).toString().padStart(2, '0');
       const year = date.getFullYear();
       return `${day}/${month}/${year}`;
     };
+    const currentDate = new Date();
+    const formattedDate = formatDate(currentDate);
 
-    const formatTime = (date: Date) => {
-      return date.toLocaleTimeString('en-GB', { hour12: false });
+    // Company Details (Placeholders)
+    const companyDetails = {
+      name: 'SAMDANI GROUP',
+      addressLine1: '123 Industrial Zone, Main Road',
+      addressLine2: 'Cityville, ST 12345',
+      phone: 'Phone: (555) 123-4567',
+      email: 'Email: contact@samdanigroup.com',
     };
 
-    // Professional Header with Shadow Effect
-    pdf.setFillColor(41, 98, 255); // Professional blue
-    pdf.rect(0, 0, pageWidth, 60, 'F');
-    
-    // Header shadow effect
-    pdf.setFillColor(0, 0, 0, 0.1);
-    pdf.rect(0, 58, pageWidth, 4, 'F');
-    
-    // Company name
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(28);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('SAMDANI GROUP', 30, 35);
-    
-    // Subtitle
-    pdf.setFontSize(14);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text('Dispatch Management System', 30, 50);
-    
-    // Date and time in header
-    pdf.setFontSize(12);
-    pdf.text(`Generated: ${formatDate(dispatchTimestamp)} ${formatTime(dispatchTimestamp)}`, pageWidth - 30, 35, { align: 'right' });
-    pdf.text(`Dispatch ID: ${dispatchId.split('-')[1]}`, pageWidth - 30, 50, { align: 'right' });
-    
-    yPosition = 80;
+    // --- Start Page Content ---
 
-    // Information Card with Shadow
-    pdf.setFillColor(255, 255, 255);
-    pdf.rect(25, yPosition, pageWidth - 50, 70, 'F');
-    
-    // Card shadow
-    pdf.setFillColor(0, 0, 0, 0.1);
-    pdf.rect(27, yPosition + 2, pageWidth - 50, 70, 'F');
-    
-    // Card border
-    pdf.setDrawColor(41, 98, 255);
-    pdf.setLineWidth(2);
-    pdf.rect(25, yPosition, pageWidth - 50, 70);
-    
-    // Information content
-    pdf.setTextColor(0, 0, 0);
-    pdf.setFontSize(16);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('DISPATCH INFORMATION', 35, yPosition + 20);
-    
-    pdf.setFontSize(11);
-    pdf.setFont('helvetica', 'normal');
-    
-    // Left column info
-    pdf.text(`Material Name: ${dispatchInfo.materialName || 'Not specified'}`, 35, yPosition + 35);
-    pdf.text(`Lot Number: ${dispatchInfo.lotNumber || 'Not specified'}`, 35, yPosition + 47);
-    pdf.text(`Vehicle Number: ${dispatchInfo.dispatchVehicleNumber || 'Not specified'}`, 35, yPosition + 59);
-    
-    // Right column info
-    const midPoint = pageWidth / 2 + 20;
-    pdf.text(`Party Name: ${dispatchInfo.partyName || 'Not specified'}`, midPoint, yPosition + 35);
-    pdf.text(`Supervisor: ${dispatchInfo.supervisorName || 'Not specified'}`, midPoint, yPosition + 47);
-    pdf.text(`Measurement Unit: ${dispatchInfo.measurementUnit}`, midPoint, yPosition + 59);
-    
-    yPosition += 90;
+    const addPageHeaderAndFooter = (isFirstPage: boolean = false) => {
+        // Reset yPosition for header if not first page (it's already set for first page)
+        if(!isFirstPage) yPosition = margin;
 
-    // Statistics section with enhanced styling
+        // Page Header
+        pdf.setFontSize(18);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(PRIMARY_COLOR);
+        pdf.text(companyDetails.name, margin, yPosition);
+
+        pdf.setFontSize(14);
+        pdf.text('DISPATCH NOTE', pageWidth - margin, yPosition, { align: 'right' as const });
+        yPosition += 20;
+
+        pdf.setFontSize(10);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(TEXT_COLOR_DARK);
+        pdf.text(companyDetails.addressLine1, margin, yPosition);
+        
+        const dispatchNoteNumber = `DN-${Date.now().toString().slice(-6)}`;
+        pdf.text(`Dispatch No: ${dispatchNoteNumber}`, pageWidth - margin, yPosition, { align: 'right' as const });
+        yPosition += 15;
+        
+        pdf.text(companyDetails.addressLine2, margin, yPosition);
+        pdf.text(`Date: ${formattedDate}`, pageWidth - margin, yPosition, { align: 'right' as const });
+        yPosition += 15;
+
+        pdf.text(companyDetails.phone, margin, yPosition);
+        yPosition += 15;
+        pdf.text(companyDetails.email, margin, yPosition);
+        yPosition += 25;
+
+        // Line separator
+        pdf.setDrawColor(BORDER_COLOR);
+        pdf.setLineWidth(0.5);
+        pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+        yPosition += 20;
+
+
+        // Page Footer (Common for all pages)
+        const footerY = pageHeight - margin + 20;
+        pdf.setDrawColor(BORDER_COLOR);
+        pdf.line(margin, pageHeight - margin, pageWidth - margin, pageHeight - margin);
+        pdf.setFontSize(8);
+        pdf.setTextColor(TEXT_COLOR_DARK);
+        pdf.text('Thank you for your business!', margin, footerY);
+        pdf.text(`Page ${pdf.internal.pages.length}`, pageWidth - margin, footerY, { align: 'right' as const });
+    };
+    
+    addPageHeaderAndFooter(true); // Add header for the first page
+
+    // Party and Dispatch Details
+    const col1X = margin;
+    const col2X = margin + contentWidth / 2 + 20;
+    
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('BILLED TO:', col1X, yPosition);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(dispatchInfo.partyName || 'N/A', col1X, yPosition + 15);
+    pdf.text('Party Address Line 1 (Placeholder)', col1X, yPosition + 30);
+    pdf.text('Party City, State, Zip (Placeholder)', col1X, yPosition + 45);
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('DISPATCHED FROM:', col2X, yPosition);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(companyDetails.name, col2X, yPosition + 15);
+    pdf.text(companyDetails.addressLine1, col2X, yPosition + 30);
+     yPosition += 60;
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('MATERIAL:', col1X, yPosition);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(dispatchInfo.materialName || 'N/A', col1X + 80, yPosition);
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('VEHICLE NO.:', col2X, yPosition);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(dispatchInfo.dispatchVehicleNumber || 'N/A', col2X + 80, yPosition);
+    yPosition += 20;
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('LOT NUMBER (UID):', col1X, yPosition);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(dispatchInfo.lotNumber || 'N/A', col1X + 80, yPosition);
+    
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('SUPERVISOR:', col2X, yPosition);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(dispatchInfo.supervisorName || 'N/A', col2X + 80, yPosition);
+    yPosition += 20;
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('MEASUREMENT UNIT:', col1X, yPosition);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(dispatchInfo.measurementUnit, col1X + 100, yPosition);
+    yPosition += 25;
+
+    // Line separator
+    pdf.setDrawColor(BORDER_COLOR);
+    pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+    yPosition += 20;
+
+    // Slab Table
+    // Filter slabs with actual measurements (same as handleSubmit)
     const validSlabs = slabs.filter(slab => 
-      slab.thickness > 0 || slab.length > 0 || slab.height > 0
+      slab.thickness > 0 && slab.length > 0 && slab.height > 0
     );
-    
-    pdf.setFillColor(240, 248, 255); // Light blue background
-    pdf.rect(25, yPosition, pageWidth - 50, 35, 'F');
-    pdf.setDrawColor(41, 98, 255);
-    pdf.setLineWidth(1);
-    pdf.rect(25, yPosition, pageWidth - 50, 35);
-    
-    pdf.setFontSize(14);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(41, 98, 255);
-    pdf.text('MEASUREMENT SUMMARY', 35, yPosition + 15);
-    
-    pdf.setFontSize(12);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(0, 0, 0);
-    pdf.text(`Total slabs in this measurement: ${validSlabs.length}`, 35, yPosition + 27);
-    pdf.text(`Measurement unit: ${dispatchInfo.measurementUnit}`, pageWidth - 35, yPosition + 27, { align: 'right' });
-    
-    yPosition += 50;
 
-    // Enhanced table header with gradient effect
-    pdf.setFillColor(41, 98, 255);
-    pdf.rect(25, yPosition, pageWidth - 50, 18, 'F');
-    
-    // Header shadow
-    pdf.setFillColor(0, 0, 0, 0.2);
-    pdf.rect(25, yPosition + 16, pageWidth - 50, 2, 'F');
-    
-    // Column setup with very compact widths - to fit all in one row
-    const columns = [
-      { header: 'Slab #', width: 25, align: 'center' },
-      { header: 'Length', width: 28, align: 'right' },
-      { header: 'Height', width: 28, align: 'right' },
-      { header: 'Thick', width: 28, align: 'right' },
-      { header: 'Gross Area', width: 32, align: 'right' },
-      { header: 'C1 Area', width: 24, align: 'right' },
-      { header: 'C2 Area', width: 24, align: 'right' },
-      { header: 'C3 Area', width: 24, align: 'right' },
-      { header: 'C4 Area', width: 24, align: 'right' },
-      { header: 'Deducted Area', width: 32, align: 'right' },
-      { header: 'Net Area', width: 32, align: 'right' }
+    const tableCols = [
+      { header: 'Slab #', width: 25, dataKey: 'slabNumber', align: 'center' },
+      { header: `L (${dispatchInfo.measurementUnit})`, width: 28, dataKey: 'length', align: 'right' },
+      { header: `H (${dispatchInfo.measurementUnit})`, width: 28, dataKey: 'height', align: 'right' },
+      { header: `T (${dispatchInfo.measurementUnit})`, width: 28, dataKey: 'thickness', align: 'right' },
+      { header: `Gross (${dispatchInfo.measurementUnit}²)`, width: 32, dataKey: 'grossArea', align: 'right' },
+      { header: `C1 (${dispatchInfo.measurementUnit}²)`, width: 24, dataKey: 'c1Area', align: 'right' },
+      { header: `C2 (${dispatchInfo.measurementUnit}²)`, width: 24, dataKey: 'c2Area', align: 'right' },
+      { header: `C3 (${dispatchInfo.measurementUnit}²)`, width: 24, dataKey: 'c3Area', align: 'right' },
+      { header: `C4 (${dispatchInfo.measurementUnit}²)`, width: 24, dataKey: 'c4Area', align: 'right' },
+      { header: `Deduct (${dispatchInfo.measurementUnit}²)`, width: 32, dataKey: 'totalDeductionArea', align: 'right' },
+      { header: `Net (${dispatchInfo.measurementUnit}²)`, width: 32, dataKey: 'netArea', align: 'right' }
     ];
     
-    // Calculate column positions
-    let currentX = 25;
-    const colPositions = columns.map(col => {
+    // Calculate column positions (using `margin` as starting point for table)
+    let currentX = margin;
+    const colPositions = tableCols.map(col => {
       const pos = currentX;
       currentX += col.width;
       return pos;
     });
-    
-    // Header text with enhanced styling - smaller font for better fit
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(7);
-    pdf.setFont('helvetica', 'bold');
-    
-    columns.forEach((col, index) => {
-      if (col.align === 'center') {
-        pdf.text(col.header, colPositions[index] + col.width / 2, yPosition + 12, { align: 'center' });
-      } else if (col.align === 'right') {
-        pdf.text(col.header, colPositions[index] + col.width - 3, yPosition + 12, { align: 'right' });
-      } else {
-        pdf.text(col.header, colPositions[index] + 3, yPosition + 12);
-      }
-    });
-    
-    yPosition += 18;
+    const tableTotalWidth = tableCols.reduce((sum, col) => sum + col.width, 0);
 
-    // Enhanced table rows with alternating colors and borders - smaller font
-    pdf.setTextColor(0, 0, 0);
+    const drawTableHeader = () => {
+      pdf.setFillColor(PRIMARY_COLOR);
+      pdf.rect(margin, yPosition, tableTotalWidth, 20, 'F');
+      pdf.setTextColor(TEXT_COLOR_LIGHT);
+      pdf.setFontSize(8); // Slightly larger header font
+      pdf.setFont('helvetica', 'bold');
+      
+      tableCols.forEach((col, index) => {
+        let textX = colPositions[index];
+        if (col.align === 'center') textX += col.width / 2;
+        else if (col.align === 'right') textX += col.width - 5; // padding
+        else textX += 5; // padding
+        pdf.text(col.header, textX, yPosition + 14, { 
+          align: (col.align || 'left') as 'left' | 'center' | 'right' | 'justify' 
+        });
+      });
+      yPosition += 20;
+    };
+
+    drawTableHeader();
+    
+    pdf.setTextColor(TEXT_COLOR_DARK);
     pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(6);
-    pdf.setDrawColor(200, 200, 200);
-    pdf.setLineWidth(0.5);
+    pdf.setFontSize(7); // Slightly larger data font
     
     validSlabs.forEach((slab, index) => {
-      const rowHeight = 10;
+      const rowHeight = 18;
       
-      // Check for new page
-      if (yPosition > pageHeight - 50) {
+      if (yPosition + rowHeight > pageHeight - margin - 30) { // Check for page break (leave space for footer + totals)
         pdf.addPage('landscape');
-        yPosition = 30;
-        
-        // Redraw enhanced header on new page
-        pdf.setFillColor(41, 98, 255);
-        pdf.rect(25, yPosition, pageWidth - 50, 18, 'F');
-        pdf.setFillColor(0, 0, 0, 0.2);
-        pdf.rect(25, yPosition + 16, pageWidth - 50, 2, 'F');
-        pdf.setTextColor(255, 255, 255);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(7);
-        
-        columns.forEach((col, colIndex) => {
-          if (col.align === 'center') {
-            pdf.text(col.header, colPositions[colIndex] + col.width / 2, yPosition + 12, { align: 'center' });
-          } else if (col.align === 'right') {
-            pdf.text(col.header, colPositions[colIndex] + col.width - 3, yPosition + 12, { align: 'right' });
-          } else {
-            pdf.text(col.header, colPositions[colIndex] + 3, yPosition + 12);
-          }
-        });
-        
-        yPosition += 18;
-        pdf.setTextColor(0, 0, 0);
+        addPageHeaderAndFooter(); // Add header and footer to new page
+        drawTableHeader(); // Redraw table header
+        pdf.setTextColor(TEXT_COLOR_DARK); // Reset text color after header
         pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(6);
+        pdf.setFontSize(7);
       }
       
-      // Alternating row colors with subtle gradient
       if (index % 2 === 0) {
-        pdf.setFillColor(248, 250, 252);
-        pdf.rect(25, yPosition, pageWidth - 50, rowHeight, 'F');
-      } else {
-        pdf.setFillColor(255, 255, 255);
-        pdf.rect(25, yPosition, pageWidth - 50, rowHeight, 'F');
+        pdf.setFillColor(ROW_ALT_COLOR);
+        pdf.rect(margin, yPosition, tableTotalWidth, rowHeight, 'F');
       }
       
-      // Enhanced row border
-      pdf.setDrawColor(220, 220, 220);
-      pdf.rect(25, yPosition, pageWidth - 50, rowHeight);
+      const rowData = {
+        slabNumber: slab.slabNumber.toString(),
+        length: slab.length.toFixed(2),
+        height: slab.height.toFixed(2),
+        thickness: slab.thickness.toFixed(2),
+        grossArea: slab.grossArea.toFixed(2),
+        c1Area: slab.cornerDeductions[0]?.area.toFixed(2) || '0.00',
+        c2Area: slab.cornerDeductions[1]?.area.toFixed(2) || '0.00',
+        c3Area: slab.cornerDeductions[2]?.area.toFixed(2) || '0.00',
+        c4Area: slab.cornerDeductions[3]?.area.toFixed(2) || '0.00',
+        totalDeductionArea: slab.totalDeductionArea.toFixed(2),
+        netArea: slab.netArea.toFixed(2)
+      };
       
-      // Vertical separators with subtle styling
-      colPositions.forEach((pos, colIndex) => {
-        if (colIndex > 0) {
-          pdf.setDrawColor(230, 230, 230);
-          pdf.line(pos, yPosition, pos, yPosition + rowHeight);
-        }
+      tableCols.forEach((col, colIndex) => {
+        let textX = colPositions[colIndex];
+        const cellValue = rowData[col.dataKey as keyof typeof rowData] || '';
+        if (col.align === 'center') textX += col.width / 2;
+        else if (col.align === 'right') textX += col.width - 5; // padding
+        else textX += 5; // padding
+        pdf.text(cellValue, textX, yPosition + rowHeight - 6, { 
+          align: (col.align || 'left') as 'left' | 'center' | 'right' | 'justify' 
+        });
       });
       
-      // Row data with enhanced formatting
-      const rowData = [
-        slab.slabNumber.toString(),
-        slab.length.toFixed(2),
-        slab.height.toFixed(2),
-        slab.thickness.toFixed(2),
-        slab.grossArea.toFixed(2),
-        slab.cornerDeductions[0]?.area.toFixed(2) || '0.00',
-        slab.cornerDeductions[1]?.area.toFixed(2) || '0.00',
-        slab.cornerDeductions[2]?.area.toFixed(2) || '0.00',
-        slab.cornerDeductions[3]?.area.toFixed(2) || '0.00',
-        slab.totalDeductionArea.toFixed(2),
-        slab.netArea.toFixed(2)
-      ];
-      
-      rowData.forEach((data, colIndex) => {
-        const col = columns[colIndex];
-        if (col.align === 'center') {
-          pdf.text(data, colPositions[colIndex] + col.width / 2, yPosition + 7, { align: 'center' });
-        } else if (col.align === 'right') {
-          pdf.text(data, colPositions[colIndex] + col.width - 2, yPosition + 7, { align: 'right' });
-        } else {
-          pdf.text(data, colPositions[colIndex] + 2, yPosition + 7);
-        }
+      // Draw cell borders
+      pdf.setDrawColor(BORDER_COLOR);
+      pdf.rect(margin, yPosition, tableTotalWidth, rowHeight); // Outer rect for row
+      colPositions.forEach((pos, idx) => { // Vertical lines
+         if (idx > 0) pdf.line(pos, yPosition, pos, yPosition + rowHeight);
       });
-      
+
       yPosition += rowHeight;
     });
 
-    // Enhanced summary section
-    yPosition += 25;
-    
+    // Totals Section
+    yPosition += 20; // Space before totals
+    if (yPosition > pageHeight - margin - 100) { // Check if totals need new page
+        pdf.addPage('landscape');
+        addPageHeaderAndFooter();
+        yPosition = margin + 180; // Approximate y after header/details
+    }
+
     const totalGross = validSlabs.reduce((sum, slab) => sum + slab.grossArea, 0);
     const totalDeduct = validSlabs.reduce((sum, slab) => sum + slab.totalDeductionArea, 0);
     const totalNet = getTotalArea();
     
-    // Summary card with gradient and shadow
-    const summaryHeight = 60;
-    pdf.setFillColor(240, 248, 255);
-    pdf.rect(pageWidth - 220, yPosition, 190, summaryHeight, 'F');
-    
-    // Shadow effect
-    pdf.setFillColor(0, 0, 0, 0.1);
-    pdf.rect(pageWidth - 218, yPosition + 2, 190, summaryHeight, 'F');
-    
-    // Border with blue accent
-    pdf.setDrawColor(41, 98, 255);
-    pdf.setLineWidth(2);
-    pdf.rect(pageWidth - 220, yPosition, 190, summaryHeight);
-    
-    // Summary content
-    pdf.setFontSize(14);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(41, 98, 255);
-    pdf.text('TOTALS', pageWidth - 210, yPosition + 15);
-    
+    const totalsXLabel = pageWidth - margin - 200; // Position for labels
+    const totalsXValue = pageWidth - margin - 5;      // Position for values (right aligned)
+
     pdf.setFontSize(10);
     pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(0, 0, 0);
-    
-    const summaryData = [
-      ['Total Gross Area:', `${totalGross.toFixed(2)} ${dispatchInfo.measurementUnit}²`],
-      ['Total Deductions:', `${totalDeduct.toFixed(2)} ${dispatchInfo.measurementUnit}²`],
-      ['Total Net Area:', `${totalNet.toFixed(2)} ${dispatchInfo.measurementUnit}²`]
-    ];
-    
-    summaryData.forEach((row, index) => {
-      const summaryY = yPosition + 30 + (index * 10);
-      pdf.text(row[0], pageWidth - 210, summaryY);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(row[1], pageWidth - 40, summaryY, { align: 'right' });
-      pdf.setFont('helvetica', 'normal');
-    });
+    pdf.text('Total Slabs Dispatched:', totalsXLabel, yPosition);
+    pdf.text(validSlabs.length.toString(), totalsXValue, yPosition, { align: 'right' as const });
+    yPosition += 18;
 
-    // Professional footer with enhanced styling
-    const footerY = pageHeight - 25;
-    pdf.setFillColor(41, 98, 255);
-    pdf.rect(0, footerY - 5, pageWidth, 30, 'F');
+    pdf.text(`Total Gross Area (${dispatchInfo.measurementUnit}²):`, totalsXLabel, yPosition);
+    pdf.text(totalGross.toFixed(2), totalsXValue, yPosition, { align: 'right' as const });
+    yPosition += 18;
     
-    pdf.setFontSize(9);
+    pdf.text(`Total Deduction Area (${dispatchInfo.measurementUnit}²):`, totalsXLabel, yPosition);
+    pdf.text(totalDeduct.toFixed(2), totalsXValue, yPosition, { align: 'right' as const });
+    yPosition += 18;
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(`TOTAL NET DISPATCHED AREA (${dispatchInfo.measurementUnit}²):`, totalsXLabel, yPosition);
+    pdf.text(totalNet.toFixed(2), totalsXValue, yPosition, { align: 'right' as const });
+    yPosition += 30;
+
+
+    // Notes and Signature
+    if (yPosition > pageHeight - margin - 80) { // Check if notes/signature need new page
+        pdf.addPage('landscape');
+        addPageHeaderAndFooter();
+        yPosition = margin + 180;
+    }
+
+    const notesX = margin;
+    const signatureX = pageWidth - margin - 200;
+
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Notes:', notesX, yPosition);
     pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(255, 255, 255);
-    pdf.text('Generated by Samdani Group Dispatch Management System', pageWidth / 2, footerY + 5, { align: 'center' });
-    pdf.text(`© ${new Date().getFullYear()} Samdani Group. All rights reserved.`, pageWidth / 2, footerY + 15, { align: 'center' });
+    // You can add a box for notes if needed:
+    // pdf.setDrawColor(BORDER_COLOR);
+    // pdf.rect(notesX, yPosition + 5, contentWidth / 2 - 20, 50); 
+    pdf.text('1. All goods received in good condition.', notesX, yPosition + 15);
+    pdf.text('2. Please verify measurements upon receipt.', notesX, yPosition + 30);
 
-    // Enhanced filename with better formatting
-    const fileName = `Dispatch_Report_${dispatchInfo.lotNumber || 'Default'}_${formatDate(new Date()).replace(/\//g, '-')}.pdf`;
+
+    pdf.setDrawColor(TEXT_COLOR_DARK);
+    pdf.line(signatureX, yPosition + 40, pageWidth - margin, yPosition + 40); // Signature line
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Authorized Signature', signatureX, yPosition + 55);
+
+    // Final call to ensure footer is on the last page if content is short
+    // (Handled by addPageHeaderAndFooter on each page including the first)
+
+    // Save PDF
+    const fileName = `Dispatch_Note_${dispatchInfo.partyName || 'UnknownParty'}_${dispatchInfo.lotNumber || 'NoLot'}_${formattedDate.replace(/\//g, '-')}.pdf`;
     pdf.save(fileName);
   };
+
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -728,7 +643,6 @@ const SlabEntry = () => {
                 <select
                   value={dispatchInfo.materialName}
                   onChange={(e) => {
-                    console.log('Material dropdown changed:', e.target.value);
                     if (e.target.value === 'ADD_NEW') {
                       setShowAddMaterial(true);
                     } else {
@@ -756,7 +670,6 @@ const SlabEntry = () => {
                   />
                   <button type="button" onClick={addNewMaterial} className="btn-primary">Add</button>
                   <button type="button" onClick={() => {
-                    console.log('Cancel button clicked');
                     setShowAddMaterial(false);
                   }} className="btn-secondary">Cancel</button>
                 </div>
@@ -992,13 +905,6 @@ const SlabEntry = () => {
               className="bg-green-600 text-white font-medium text-lg px-8 py-3 rounded-lg cursor-pointer hover:bg-green-700 min-w-48"
             >
               📄 Download PDF Report
-            </button>
-            <button 
-              type="button"
-              onClick={testDatabaseConnection}
-              className="bg-blue-600 text-white font-medium text-lg px-8 py-3 rounded-lg cursor-pointer hover:bg-blue-700 min-w-48"
-            >
-              🔧 Test Database
             </button>
           </div>
           <div className="text-sm text-gray-600 max-w-md mx-auto">

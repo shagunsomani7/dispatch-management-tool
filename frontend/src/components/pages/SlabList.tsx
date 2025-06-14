@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { SlabMeasurement } from '../../types';
 import { apiService } from '../../services/api';
 import { Link } from 'react-router-dom';
@@ -14,11 +14,7 @@ const SlabList = () => {
   const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'connected' | 'disconnected'>('unknown');
   const [viewMode, setViewMode] = useState<'individual' | 'grouped'>('individual');
 
-  useEffect(() => {
-    loadSlabs();
-  }, [currentPage]);
-
-  const loadSlabs = async () => {
+  const loadSlabs = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -50,7 +46,11 @@ const SlabList = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentPage]);
+
+  useEffect(() => {
+    loadSlabs();
+  }, [loadSlabs]);
 
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this slab?')) {

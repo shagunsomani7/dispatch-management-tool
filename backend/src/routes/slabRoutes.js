@@ -1,9 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const SlabMeasurement = require('../models/SlabMeasurement');
+const { authMiddleware, requireRole } = require('./authRoutes');
+
+// Protect all routes
+router.use(authMiddleware);
 
 // GET /api/slabs - Get all slab measurements with filtering
-router.get('/', async(req, res) => {
+router.get('/', requireRole('admin'), async(req, res) => {
     try {
         const {
             page = 1,
@@ -130,7 +134,7 @@ router.put('/:id', async(req, res) => {
 });
 
 // DELETE /api/slabs/:id - Delete a slab measurement
-router.delete('/:id', async(req, res) => {
+router.delete('/:id', requireRole('admin'), async(req, res) => {
     try {
         const slab = await SlabMeasurement.findByIdAndDelete(req.params.id);
 
@@ -148,7 +152,7 @@ router.delete('/:id', async(req, res) => {
 });
 
 // DELETE /api/slabs/clear-all - Delete all slab measurements
-router.delete('/clear-all', async(req, res) => {
+router.delete('/clear-all', requireRole('admin'), async(req, res) => {
     try {
         const result = await SlabMeasurement.deleteMany({});
 

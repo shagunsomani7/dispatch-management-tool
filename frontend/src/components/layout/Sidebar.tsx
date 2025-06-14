@@ -1,15 +1,26 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useAuth } from '../../App';
+
+type MenuItem = { path: string; label: string; icon: string };
 
 const Sidebar = () => {
   const location = useLocation();
+  const { user } = useAuth();
 
-  const menuItems = [
-    { path: '/', label: 'Dashboard', icon: '📊' },
-    { path: '/entry', label: 'Slab Entry', icon: '��' },
-    { path: '/slabs', label: 'View Database', icon: '🗄️' },
-    { path: '/reports', label: 'Reports', icon: '📈' },
-  ];
+  let menuItems: MenuItem[] = [];
+  if (user?.username === 'admin') {
+    menuItems = [
+      { path: '/', label: 'Dashboard', icon: '📊' },
+      { path: '/entry', label: 'Slab Entry', icon: '📝' },
+      { path: '/slabs', label: 'View Database', icon: '🗄️' },
+      { path: '/reports', label: 'Reports', icon: '📈' },
+    ];
+  } else {
+    menuItems = [
+      { path: '/entry', label: 'Slab Entry', icon: '📝' },
+    ];
+  }
 
   return (
     <aside className="w-64 bg-white border-r border-gray-200 min-h-screen">
