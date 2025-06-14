@@ -1,5 +1,5 @@
 export interface SlabMeasurement {
-  id: string;
+  _id: string;
   
   // Dispatch batch information
   dispatchId: string;
@@ -24,7 +24,7 @@ export interface SlabMeasurement {
 }
 
 export interface CornerDeduction {
-  id: string;
+  id?: string;
   length: number;
   height: number;
   area: number;

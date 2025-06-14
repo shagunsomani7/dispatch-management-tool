@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { SlabMeasurement } from '../../types';
 import { apiService } from '../../services/api';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 const SlabList = () => {
+  const location = useLocation();
   const [slabs, setSlabs] = useState<SlabMeasurement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -12,7 +13,14 @@ const SlabList = () => {
   const [totalSlabs, setTotalSlabs] = useState(0);
   const [isClearing, setIsClearing] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'connected' | 'disconnected'>('unknown');
-  const [viewMode, setViewMode] = useState<'individual' | 'grouped'>('individual');
+  const [viewMode, setViewMode] = useState<'individual' | 'grouped'>('grouped');
+
+  // Preserve scroll position on mount
+  useEffect(() => {
+    if (location.state?.preserveScroll) {
+      window.scrollTo(0, 0);
+    }
+  }, [location]);
 
   const loadSlabs = useCallback(async () => {
     try {
@@ -55,12 +63,20 @@ const SlabList = () => {
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this slab?')) {
       try {
+        setError(null);
         await apiService.deleteSlab(id);
         alert('Slab deleted successfully');
         loadSlabs(); // Reload the list
       } catch (err) {
-        alert('Error deleting slab');
         console.error('Error deleting slab:', err);
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+        if (errorMessage.includes('403')) {
+          setError('You do not have permission to delete slabs. Please log in as an admin.');
+        } else if (errorMessage.includes('404')) {
+          setError('Slab not found. It may have been already deleted.');
+        } else {
+          setError(`Error deleting slab: ${errorMessage}`);
+        }
       }
     }
   };
@@ -146,9 +162,16 @@ const SlabList = () => {
       vehicleNumber: string;
     }>);
 
-    return Object.values(grouped).sort((a, b) => 
+    // Sort dispatches by timestamp (newest first)
+    const sortedDispatches = Object.values(grouped).sort((a, b) => 
       new Date(b.dispatchTimestamp).getTime() - new Date(a.dispatchTimestamp).getTime()
     );
+
+    // Sort slabs within each dispatch by slab number (ascending)
+    return sortedDispatches.map(dispatch => ({
+      ...dispatch,
+      slabs: dispatch.slabs.sort((a, b) => a.slabNumber - b.slabNumber)
+    }));
   };
 
   if (loading) {
@@ -282,7 +305,7 @@ const SlabList = () => {
                   </thead>
                   <tbody>
                     {slabs.map((slab) => (
-                      <tr key={slab.id} className="border-t">
+                      <tr key={slab._id} className="border-t">
                         <td className="px-4 py-2">
                           <div className="text-sm font-mono text-blue-600">
                             {slab.dispatchId?.split('-')[1] || 'N/A'}
@@ -312,7 +335,7 @@ const SlabList = () => {
                         </td>
                         <td className="px-4 py-2">
                           <button
-                            onClick={() => handleDelete(slab.id)}
+                            onClick={() => handleDelete(slab._id)}
                             className="text-red-600 hover:text-red-800 text-sm"
                           >
                             Delete
@@ -361,7 +384,7 @@ const SlabList = () => {
                           </thead>
                           <tbody>
                             {dispatch.slabs.map((slab) => (
-                              <tr key={slab.id} className="border-t">
+                              <tr key={slab._id} className="border-t">
                                 <td className="px-4 py-2 font-medium">{slab.slabNumber}</td>
                                 <td className="px-4 py-2">
                                   {slab.thickness} × {slab.length} × {slab.height} {slab.measurementUnit}
@@ -377,7 +400,7 @@ const SlabList = () => {
                                 </td>
                                 <td className="px-4 py-2">
                                   <button
-                                    onClick={() => handleDelete(slab.id)}
+                                    onClick={() => handleDelete(slab._id)}
                                     className="text-red-600 hover:text-red-800 text-sm"
                                   >
                                     Delete

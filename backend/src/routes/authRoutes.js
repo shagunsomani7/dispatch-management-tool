@@ -72,11 +72,17 @@ router.post('/login', async(req, res) => {
 });
 
 // GET /api/auth/me - Get current user
-router.get('/me', async(req, res) => {
+router.get('/me', authMiddleware, async(req, res) => {
     try {
-        // TODO: Implement user verification
+        const user = await User.findById(req.user.userId).select('-password');
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
         res.json({
-            user: { id: 1, username: 'supervisor', role: 'supervisor' }
+            user: {
+                username: user.username,
+                role: user.role
+            }
         });
     } catch (error) {
         res.status(500).json({

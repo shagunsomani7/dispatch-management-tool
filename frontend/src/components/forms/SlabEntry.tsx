@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { MeasurementUnit, CornerDeduction } from '../../types';
 import { apiService } from '../../services/api';
 import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { useNavigate } from 'react-router-dom';
 
 interface SlabFormData {
   id: string;
@@ -16,6 +18,8 @@ interface SlabFormData {
 }
 
 const SlabEntry = () => {
+  const navigate = useNavigate();
+
   // Common dispatch information
   const [dispatchInfo, setDispatchInfo] = useState({
     materialName: '',
@@ -35,8 +39,17 @@ const SlabEntry = () => {
     'Quartz Premium'
   ]);
 
+  // Party options with ability to add new
+  const [parties, setParties] = useState([
+    'Party A',
+    'Party B',
+    'Party C'
+  ]);
+
   const [showAddMaterial, setShowAddMaterial] = useState(false);
   const [newMaterial, setNewMaterial] = useState('');
+  const [showAddParty, setShowAddParty] = useState(false);
+  const [newParty, setNewParty] = useState('');
 
   // Multiple slabs (minimum 5)
   const [slabs, setSlabs] = useState<SlabFormData[]>(() => 
@@ -71,6 +84,15 @@ const SlabEntry = () => {
       setDispatchInfo(prev => ({ ...prev, materialName: newMaterial.trim() }));
       setNewMaterial('');
       setShowAddMaterial(false);
+    }
+  };
+
+  const addNewParty = () => {
+    if (newParty.trim() && !parties.includes(newParty.trim())) {
+      setParties(prev => [...prev, newParty.trim()]);
+      setDispatchInfo(prev => ({ ...prev, partyName: newParty.trim() }));
+      setNewParty('');
+      setShowAddParty(false);
     }
   };
 
@@ -233,6 +255,10 @@ const SlabEntry = () => {
         return;
       }
       
+      // Generate a single dispatchId for all slabs
+      const dispatchId = `DISP-${Date.now()}-${dispatchInfo.lotNumber}`;
+      const dispatchTimestamp = new Date();
+      
       const savedSlabs = [];
       for (let i = 0; i < validSlabs.length; i++) {
         const slab = validSlabs[i];
@@ -247,8 +273,8 @@ const SlabEntry = () => {
 
         // Prepare slab data with all required fields
         const slabData = {
-          dispatchId: Date.now().toString(),
-          dispatchTimestamp: new Date(),
+          dispatchId,
+          dispatchTimestamp,
           materialName: dispatchInfo.materialName,
           lotNumber: dispatchInfo.lotNumber,
           dispatchVehicleNumber: dispatchInfo.dispatchVehicleNumber,
@@ -258,7 +284,11 @@ const SlabEntry = () => {
           thickness: slab.thickness,
           length: slab.length,
           height: slab.height,
-          cornerDeductions: slab.cornerDeductions,
+          cornerDeductions: slab.cornerDeductions.map(({ length, height, area }) => ({
+            length,
+            height,
+            area
+          })),
           measurementUnit: dispatchInfo.measurementUnit,
           grossArea,
           totalDeductionArea,
@@ -280,6 +310,8 @@ const SlabEntry = () => {
         }
       }
       alert(`Successfully saved ${savedSlabs.length} slabs to database!`);
+      // Navigate to slabs database page after successful save
+      navigate('/slabs', { state: { preserveScroll: true } });
     } catch (error) {
       console.error('Error saving slabs:', error);
       if (error instanceof Error) {
@@ -293,321 +325,323 @@ const SlabEntry = () => {
   const getTotalArea = () => {
     return slabs.reduce((total, slab) => total + slab.netArea, 0);
   };
+  
+  const generatePDF = async () => {
+    try {
+      // First save to database
+      if (!dispatchInfo.materialName || !dispatchInfo.lotNumber || !dispatchInfo.dispatchVehicleNumber || 
+          !dispatchInfo.supervisorName || !dispatchInfo.partyName) {
+        alert('Please fill in all dispatch information fields');
+        return;
+      }
 
-  const generatePDF = () => {
-    const pdf = new jsPDF('landscape'); // Using landscape due to wide table
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    
-    // Margins (in points)
-    const margin = 40; // Approx 14mm
-    const contentWidth = pageWidth - 2 * margin;
-    let yPosition = margin;
+      // Filter valid slabs
+      const validSlabs = slabs.filter(slab => 
+        slab.thickness > 0 && slab.length > 0 && slab.height > 0
+      );
 
-    // Colors
-    const PRIMARY_COLOR = '#2962FF'; // Original Blue
-    const TEXT_COLOR_DARK = '#333333';
-    const TEXT_COLOR_LIGHT = '#FFFFFF';
-    const BORDER_COLOR = '#DDDDDD';
-    const ROW_ALT_COLOR = '#F5F5F5'; // Light gray for alternating rows
-
-    // Helper to format date
-    const formatDate = (date: Date) => {
-      const day = date.getDate().toString().padStart(2, '0');
-      const month = (date.getMonth() + 1).toString().padStart(2, '0');
-      const year = date.getFullYear();
-      return `${day}/${month}/${year}`;
-    };
-    const currentDate = new Date();
-    const formattedDate = formatDate(currentDate);
-
-    // Company Details (Placeholders)
-    const companyDetails = {
-      name: 'SAMDANI GROUP',
-      addressLine1: '123 Industrial Zone, Main Road',
-      addressLine2: 'Cityville, ST 12345',
-      phone: 'Phone: (555) 123-4567',
-      email: 'Email: contact@samdanigroup.com',
-    };
-
-    // --- Start Page Content ---
-
-    const addPageHeaderAndFooter = (isFirstPage: boolean = false) => {
-        // Reset yPosition for header if not first page (it's already set for first page)
-        if(!isFirstPage) yPosition = margin;
-
-        // Page Header
-        pdf.setFontSize(18);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(PRIMARY_COLOR);
-        pdf.text(companyDetails.name, margin, yPosition);
-
-        pdf.setFontSize(14);
-        pdf.text('DISPATCH NOTE', pageWidth - margin, yPosition, { align: 'right' as const });
-        yPosition += 20;
-
-        pdf.setFontSize(10);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setTextColor(TEXT_COLOR_DARK);
-        pdf.text(companyDetails.addressLine1, margin, yPosition);
-        
-        const dispatchNoteNumber = `DN-${Date.now().toString().slice(-6)}`;
-        pdf.text(`Dispatch No: ${dispatchNoteNumber}`, pageWidth - margin, yPosition, { align: 'right' as const });
-        yPosition += 15;
-        
-        pdf.text(companyDetails.addressLine2, margin, yPosition);
-        pdf.text(`Date: ${formattedDate}`, pageWidth - margin, yPosition, { align: 'right' as const });
-        yPosition += 15;
-
-        pdf.text(companyDetails.phone, margin, yPosition);
-        yPosition += 15;
-        pdf.text(companyDetails.email, margin, yPosition);
-        yPosition += 25;
-
-        // Line separator
-        pdf.setDrawColor(BORDER_COLOR);
-        pdf.setLineWidth(0.5);
-        pdf.line(margin, yPosition, pageWidth - margin, yPosition);
-        yPosition += 20;
-
-
-        // Page Footer (Common for all pages)
-        const footerY = pageHeight - margin + 20;
-        pdf.setDrawColor(BORDER_COLOR);
-        pdf.line(margin, pageHeight - margin, pageWidth - margin, pageHeight - margin);
-        pdf.setFontSize(8);
-        pdf.setTextColor(TEXT_COLOR_DARK);
-        pdf.text('Thank you for your business!', margin, footerY);
-        pdf.text(`Page ${pdf.internal.pages.length}`, pageWidth - margin, footerY, { align: 'right' as const });
-    };
-    
-    addPageHeaderAndFooter(true); // Add header for the first page
-
-    // Party and Dispatch Details
-    const col1X = margin;
-    const col2X = margin + contentWidth / 2 + 20;
-    
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('BILLED TO:', col1X, yPosition);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(dispatchInfo.partyName || 'N/A', col1X, yPosition + 15);
-    pdf.text('Party Address Line 1 (Placeholder)', col1X, yPosition + 30);
-    pdf.text('Party City, State, Zip (Placeholder)', col1X, yPosition + 45);
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('DISPATCHED FROM:', col2X, yPosition);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(companyDetails.name, col2X, yPosition + 15);
-    pdf.text(companyDetails.addressLine1, col2X, yPosition + 30);
-     yPosition += 60;
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('MATERIAL:', col1X, yPosition);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(dispatchInfo.materialName || 'N/A', col1X + 80, yPosition);
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('VEHICLE NO.:', col2X, yPosition);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(dispatchInfo.dispatchVehicleNumber || 'N/A', col2X + 80, yPosition);
-    yPosition += 20;
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('LOT NUMBER (UID):', col1X, yPosition);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(dispatchInfo.lotNumber || 'N/A', col1X + 80, yPosition);
-    
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('SUPERVISOR:', col2X, yPosition);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(dispatchInfo.supervisorName || 'N/A', col2X + 80, yPosition);
-    yPosition += 20;
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('MEASUREMENT UNIT:', col1X, yPosition);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(dispatchInfo.measurementUnit, col1X + 100, yPosition);
-    yPosition += 25;
-
-    // Line separator
-    pdf.setDrawColor(BORDER_COLOR);
-    pdf.line(margin, yPosition, pageWidth - margin, yPosition);
-    yPosition += 20;
-
-    // Slab Table
-    // Filter slabs with actual measurements (same as handleSubmit)
-    const validSlabs = slabs.filter(slab => 
-      slab.thickness > 0 && slab.length > 0 && slab.height > 0
-    );
-
-    const tableCols = [
-      { header: 'Slab #', width: 25, dataKey: 'slabNumber', align: 'center' },
-      { header: `L (${dispatchInfo.measurementUnit})`, width: 28, dataKey: 'length', align: 'right' },
-      { header: `H (${dispatchInfo.measurementUnit})`, width: 28, dataKey: 'height', align: 'right' },
-      { header: `T (${dispatchInfo.measurementUnit})`, width: 28, dataKey: 'thickness', align: 'right' },
-      { header: `Gross (${dispatchInfo.measurementUnit}²)`, width: 32, dataKey: 'grossArea', align: 'right' },
-      { header: `C1 (${dispatchInfo.measurementUnit}²)`, width: 24, dataKey: 'c1Area', align: 'right' },
-      { header: `C2 (${dispatchInfo.measurementUnit}²)`, width: 24, dataKey: 'c2Area', align: 'right' },
-      { header: `C3 (${dispatchInfo.measurementUnit}²)`, width: 24, dataKey: 'c3Area', align: 'right' },
-      { header: `C4 (${dispatchInfo.measurementUnit}²)`, width: 24, dataKey: 'c4Area', align: 'right' },
-      { header: `Deduct (${dispatchInfo.measurementUnit}²)`, width: 32, dataKey: 'totalDeductionArea', align: 'right' },
-      { header: `Net (${dispatchInfo.measurementUnit}²)`, width: 32, dataKey: 'netArea', align: 'right' }
-    ];
-    
-    // Calculate column positions (using `margin` as starting point for table)
-    let currentX = margin;
-    const colPositions = tableCols.map(col => {
-      const pos = currentX;
-      currentX += col.width;
-      return pos;
-    });
-    const tableTotalWidth = tableCols.reduce((sum, col) => sum + col.width, 0);
-
-    const drawTableHeader = () => {
-      pdf.setFillColor(PRIMARY_COLOR);
-      pdf.rect(margin, yPosition, tableTotalWidth, 20, 'F');
-      pdf.setTextColor(TEXT_COLOR_LIGHT);
-      pdf.setFontSize(8); // Slightly larger header font
-      pdf.setFont('helvetica', 'bold');
-      
-      tableCols.forEach((col, index) => {
-        let textX = colPositions[index];
-        if (col.align === 'center') textX += col.width / 2;
-        else if (col.align === 'right') textX += col.width - 5; // padding
-        else textX += 5; // padding
-        pdf.text(col.header, textX, yPosition + 14, { 
-          align: (col.align || 'left') as 'left' | 'center' | 'right' | 'justify' 
-        });
-      });
-      yPosition += 20;
-    };
-
-    drawTableHeader();
-    
-    pdf.setTextColor(TEXT_COLOR_DARK);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7); // Slightly larger data font
-    
-    validSlabs.forEach((slab, index) => {
-      const rowHeight = 18;
-      
-      if (yPosition + rowHeight > pageHeight - margin - 30) { // Check for page break (leave space for footer + totals)
-        pdf.addPage('landscape');
-        addPageHeaderAndFooter(); // Add header and footer to new page
-        drawTableHeader(); // Redraw table header
-        pdf.setTextColor(TEXT_COLOR_DARK); // Reset text color after header
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(7);
+      if (validSlabs.length === 0) {
+        alert('Please enter measurements for at least one slab');
+        return;
       }
       
-      if (index % 2 === 0) {
-        pdf.setFillColor(ROW_ALT_COLOR);
-        pdf.rect(margin, yPosition, tableTotalWidth, rowHeight, 'F');
-      }
+      // Generate a single dispatchId for all slabs
+      const dispatchId = `DISP-${Date.now()}-${dispatchInfo.lotNumber}`;
+      const dispatchTimestamp = new Date();
       
-      const rowData = {
-        slabNumber: slab.slabNumber.toString(),
-        length: slab.length.toFixed(2),
-        height: slab.height.toFixed(2),
-        thickness: slab.thickness.toFixed(2),
-        grossArea: slab.grossArea.toFixed(2),
-        c1Area: slab.cornerDeductions[0]?.area.toFixed(2) || '0.00',
-        c2Area: slab.cornerDeductions[1]?.area.toFixed(2) || '0.00',
-        c3Area: slab.cornerDeductions[2]?.area.toFixed(2) || '0.00',
-        c4Area: slab.cornerDeductions[3]?.area.toFixed(2) || '0.00',
-        totalDeductionArea: slab.totalDeductionArea.toFixed(2),
-        netArea: slab.netArea.toFixed(2)
+      // Save each slab
+      const savedSlabs = [];
+      for (let i = 0; i < validSlabs.length; i++) {
+        const slab = validSlabs[i];
+        const slabData = {
+          dispatchId,
+          dispatchTimestamp,
+          materialName: dispatchInfo.materialName,
+          lotNumber: dispatchInfo.lotNumber,
+          dispatchVehicleNumber: dispatchInfo.dispatchVehicleNumber,
+          supervisorName: dispatchInfo.supervisorName,
+          partyName: dispatchInfo.partyName,
+          slabNumber: slab.slabNumber,
+          thickness: slab.thickness,
+          length: slab.length,
+          height: slab.height,
+          cornerDeductions: slab.cornerDeductions.map(({ length, height, area }) => ({
+            length,
+            height,
+            area
+          })),
+          measurementUnit: dispatchInfo.measurementUnit,
+          grossArea: slab.grossArea,
+          totalDeductionArea: slab.totalDeductionArea,
+          netArea: slab.netArea
+        };
+        
+        const savedSlab = await apiService.createSlab(slabData);
+        savedSlabs.push(savedSlab);
+      }
+
+      // After successful save, generate PDF
+      const pdf = new jsPDF('landscape');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 15; // Reduced margin for single page
+      let yPosition = 10; // Start closer to top
+
+      const PRIMARY_COLOR: [number, number, number] = [41, 98, 255];
+      const TEXT_COLOR_DARK = '#333333';
+      const TEXT_COLOR_LIGHT = '#FFFFFF';
+      const BORDER_COLOR: [number, number, number] = [180, 180, 180];
+      const HEADER_BG: [number, number, number] = [245, 245, 245];
+      const SEPARATOR_COLOR: [number, number, number] = [180, 180, 180];
+
+      // Helper functions
+      const formatDate = (date: Date) => {
+        const day = date.getDate().toString().padStart(2, '0');
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const year = date.getFullYear();
+        return `${day}/${month}/${year}`;
       };
+
+      const addSpacing = (lines = 1, lineHeight = 5) => {
+        yPosition += lines * lineHeight;
+      };
+
+      const addSeparator = () => {
+        pdf.setDrawColor(SEPARATOR_COLOR[0], SEPARATOR_COLOR[1], SEPARATOR_COLOR[2]);
+        pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+        addSpacing(1);
+      };
+
+      const currentDate = new Date();
+      const formattedDate = formatDate(currentDate);
+
+      // Company Details
+      const companyDetails = {
+        name: 'SAMDANI GROUP',
+        addressLine1: '123 Industrial Zone, Main Road',
+        addressLine2: 'Cityville, ST 12345',
+        phone: 'Phone: (555) 123-4567',
+        email: 'Email: contact@samdanigroup.com',
+      };
+
+      // Add Header with compact layout
+      pdf.setFontSize(16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(PRIMARY_COLOR[0], PRIMARY_COLOR[1], PRIMARY_COLOR[2]);
       
-      tableCols.forEach((col, colIndex) => {
-        let textX = colPositions[colIndex];
-        const cellValue = rowData[col.dataKey as keyof typeof rowData] || '';
-        if (col.align === 'center') textX += col.width / 2;
-        else if (col.align === 'right') textX += col.width - 5; // padding
-        else textX += 5; // padding
-        pdf.text(cellValue, textX, yPosition + rowHeight - 6, { 
-          align: (col.align || 'left') as 'left' | 'center' | 'right' | 'justify' 
-        });
-      });
+      // Company name and dispatch note on same line
+      pdf.text(companyDetails.name, margin, yPosition);
+      pdf.setFontSize(12);
+      pdf.text('DISPATCH NOTE', pageWidth - margin, yPosition, { align: 'right' });
+      addSpacing(1);
+
+      // Company details in two columns with minimal spacing
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(TEXT_COLOR_DARK);
       
-      // Draw cell borders
-      pdf.setDrawColor(BORDER_COLOR);
-      pdf.rect(margin, yPosition, tableTotalWidth, rowHeight); // Outer rect for row
-      colPositions.forEach((pos, idx) => { // Vertical lines
-         if (idx > 0) pdf.line(pos, yPosition, pos, yPosition + rowHeight);
+      // Left column - Company details
+      pdf.text(companyDetails.addressLine1, margin, yPosition);
+      pdf.text(companyDetails.addressLine2, margin, yPosition + 4);
+      pdf.text(companyDetails.phone, margin, yPosition + 8);
+      pdf.text(companyDetails.email, margin, yPosition + 12);
+
+      // Right column - Dispatch details
+      const dispatchNoteNumber = `DN-${Date.now().toString().slice(-6)}`;
+      pdf.text(`Dispatch No: ${dispatchNoteNumber}`, pageWidth - margin, yPosition, { align: 'right' });
+      pdf.text(`Date: ${formattedDate}`, pageWidth - margin, yPosition + 4, { align: 'right' });
+      addSpacing(3);
+
+      // Add first separator
+      addSeparator();
+
+      // Add Party and Dispatch Information in a compact format
+      const col1X = margin;
+      const col2X = margin + (pageWidth - 2 * margin) / 2 + 20;
+      const infoY = yPosition;
+
+      // Billed To and Dispatched From section with background
+      pdf.setFillColor(HEADER_BG[0], HEADER_BG[1], HEADER_BG[2]);
+      pdf.rect(col1X - 5, infoY - 5, (pageWidth - 2 * margin) / 2, 25, 'F');
+      pdf.rect(col2X - 5, infoY - 5, (pageWidth - 2 * margin) / 2, 25, 'F');
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9);
+      pdf.text('BILLED TO:', col1X, infoY);
+      pdf.text('DISPATCHED FROM:', col2X, infoY);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(dispatchInfo.partyName || 'N/A', col1X, infoY + 5);
+      pdf.text(companyDetails.name, col2X, infoY + 5);
+      yPosition = infoY + 12;
+
+      // Material and Vehicle Info
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('MATERIAL:', col1X, yPosition);
+      pdf.text('VEHICLE NO.:', col2X, yPosition);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(dispatchInfo.materialName || 'N/A', col1X + 70, yPosition);
+      pdf.text(dispatchInfo.dispatchVehicleNumber || 'N/A', col2X + 70, yPosition);
+      addSpacing(1);
+
+      // Lot Number and Supervisor
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('LOT NUMBER (UID):', col1X, yPosition);
+      pdf.text('SUPERVISOR:', col2X, yPosition);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(dispatchInfo.lotNumber || 'N/A', col1X + 70, yPosition);
+      pdf.text(dispatchInfo.supervisorName || 'N/A', col2X + 70, yPosition);
+      addSpacing(2);
+
+      // Add separator before table
+      addSeparator();
+
+      // Prepare table data
+      const tableData = validSlabs.map(slab => [
+        slab.slabNumber.toString(),
+        slab.length.toFixed(2),
+        slab.height.toFixed(2),
+        slab.thickness.toFixed(2),
+        slab.grossArea.toFixed(2),
+        slab.cornerDeductions[0]?.area.toFixed(2) || '0.00',
+        slab.cornerDeductions[1]?.area.toFixed(2) || '0.00',
+        slab.cornerDeductions[2]?.area.toFixed(2) || '0.00',
+        slab.cornerDeductions[3]?.area.toFixed(2) || '0.00',
+        slab.totalDeductionArea.toFixed(2),
+        slab.netArea.toFixed(2)
+      ]);
+
+      const totalTableWidth = 273; // sum of all cellWidths
+      const centeredMargin = (pageWidth - totalTableWidth) / 2;
+
+      // Add table using autoTable with compact configuration
+      autoTable(pdf, {
+        startY: yPosition,
+        head: [[
+          'Slab #',
+          `L (${dispatchInfo.measurementUnit})`,
+          `H (${dispatchInfo.measurementUnit})`,
+          `T (${dispatchInfo.measurementUnit})`,
+          `Gross (${dispatchInfo.measurementUnit}²)`,
+          `C1 (${dispatchInfo.measurementUnit}²)`,
+          `C2 (${dispatchInfo.measurementUnit}²)`,
+          `C3 (${dispatchInfo.measurementUnit}²)`,
+          `C4 (${dispatchInfo.measurementUnit}²)`,
+          `Deduct (${dispatchInfo.measurementUnit}²)`,
+          `Net (${dispatchInfo.measurementUnit}²)`
+        ]],
+        body: tableData,
+        theme: 'grid',
+        headStyles: {
+          fillColor: PRIMARY_COLOR,
+          textColor: TEXT_COLOR_LIGHT,
+          fontSize: 8,
+          fontStyle: 'bold',
+          halign: 'center',
+          valign: 'middle'
+        },
+        bodyStyles: {
+          fontSize: 7.5,
+          cellPadding: 1.5,
+          halign: 'right',
+          valign: 'middle'
+        },
+        columnStyles: {
+          0: { cellWidth: 18, halign: 'center' },
+          1: { cellWidth: 20 },
+          2: { cellWidth: 20 },
+          3: { cellWidth: 20 },
+          4: { cellWidth: 25 },
+          5: { cellWidth: 20 },
+          6: { cellWidth: 20 },
+          7: { cellWidth: 20 },
+          8: { cellWidth: 20 },
+          9: { cellWidth: 25 },
+          10: { cellWidth: 25 }
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245] as [number, number, number]
+        },
+        margin: { top: yPosition, bottom: 20, left: centeredMargin },
+        pageBreak: 'auto',
+        showFoot: 'lastPage',
+        tableWidth: totalTableWidth,
+        styles: {
+          overflow: 'linebreak',
+          cellPadding: 1.5,
+          lineWidth: 0.5,
+          lineColor: BORDER_COLOR
+        },
+        didDrawPage: function(data: any) {
+          // Add page number only if multiple pages
+          if (data.pageCount > 1) {
+            const pageNumber = data.pageNumber || 1;
+            const totalPages = data.pageCount || 1;
+            pdf.setFontSize(8);
+            pdf.text(
+              `Page ${pageNumber} of ${totalPages}`,
+              pageWidth - margin,
+              pageHeight - 10,
+              { align: 'right' }
+            );
+          }
+        }
       });
 
-      yPosition += rowHeight;
-    });
+      // Get the final Y position after the table
+      const finalY = (pdf as any).lastAutoTable.finalY + 15;
 
-    // Totals Section
-    yPosition += 20; // Space before totals
-    if (yPosition > pageHeight - margin - 100) { // Check if totals need new page
-        pdf.addPage('landscape');
-        addPageHeaderAndFooter();
-        yPosition = margin + 180; // Approximate y after header/details
+      // Add totals with compact layout
+      const totalGross = validSlabs.reduce((sum, slab) => sum + slab.grossArea, 0);
+      const totalDeduct = validSlabs.reduce((sum, slab) => sum + slab.totalDeductionArea, 0);
+      const totalNet = getTotalArea();
+
+      const totalsXLabel = pageWidth - margin - 180;
+      const totalsXValue = pageWidth - margin - 5;
+
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('Total Slabs Dispatched:', totalsXLabel, finalY);
+      pdf.text(validSlabs.length.toString(), totalsXValue, finalY, { align: 'right' });
+
+      pdf.text(`Total Gross Area (${dispatchInfo.measurementUnit}²):`, totalsXLabel, finalY + 5);
+      pdf.text(totalGross.toFixed(2), totalsXValue, finalY + 5, { align: 'right' });
+
+      pdf.text(`Total Deduction Area (${dispatchInfo.measurementUnit}²):`, totalsXLabel, finalY + 10);
+      pdf.text(totalDeduct.toFixed(2), totalsXValue, finalY + 10, { align: 'right' });
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`TOTAL NET DISPATCHED AREA (${dispatchInfo.measurementUnit}²):`, totalsXLabel, finalY + 15);
+      pdf.text(totalNet.toFixed(2), totalsXValue, finalY + 15, { align: 'right' });
+
+      // Add notes and signature in a compact format with increased spacing
+      const notesY = finalY + 55;
+      const signatureX = pageWidth - margin - 80;
+
+      // Add notes without background
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9);
+      pdf.text('Notes:', margin, notesY);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('1. All goods received in good condition.', margin, notesY + 5);
+      pdf.text('2. Please verify measurements upon receipt.', margin, notesY + 10);
+
+      // Add signature box
+      pdf.setDrawColor(BORDER_COLOR[0], BORDER_COLOR[1], BORDER_COLOR[2]);
+      pdf.line(signatureX, notesY + 15, pageWidth - margin, notesY + 15);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Authorized Signature', signatureX, notesY + 25);
+
+      // Save PDF with formatted filename
+      const fileName = `Dispatch_Note_${dispatchInfo.partyName || 'UnknownParty'}_${dispatchInfo.lotNumber || 'NoLot'}_${formattedDate.replace(/\//g, '-')}.pdf`;
+      pdf.save(fileName);
+
+      alert(`Successfully saved ${savedSlabs.length} slabs to database and generated PDF report!`);
+      // Navigate to slabs database page after successful save and PDF generation
+      navigate('/slabs', { state: { preserveScroll: true } });
+    } catch (error) {
+      console.error('Error saving slabs or generating PDF:', error);
+      alert('Error saving slabs or generating PDF. Please check the console for more details.');
     }
-
-    const totalGross = validSlabs.reduce((sum, slab) => sum + slab.grossArea, 0);
-    const totalDeduct = validSlabs.reduce((sum, slab) => sum + slab.totalDeductionArea, 0);
-    const totalNet = getTotalArea();
-    
-    const totalsXLabel = pageWidth - margin - 200; // Position for labels
-    const totalsXValue = pageWidth - margin - 5;      // Position for values (right aligned)
-
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text('Total Slabs Dispatched:', totalsXLabel, yPosition);
-    pdf.text(validSlabs.length.toString(), totalsXValue, yPosition, { align: 'right' as const });
-    yPosition += 18;
-
-    pdf.text(`Total Gross Area (${dispatchInfo.measurementUnit}²):`, totalsXLabel, yPosition);
-    pdf.text(totalGross.toFixed(2), totalsXValue, yPosition, { align: 'right' as const });
-    yPosition += 18;
-    
-    pdf.text(`Total Deduction Area (${dispatchInfo.measurementUnit}²):`, totalsXLabel, yPosition);
-    pdf.text(totalDeduct.toFixed(2), totalsXValue, yPosition, { align: 'right' as const });
-    yPosition += 18;
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.text(`TOTAL NET DISPATCHED AREA (${dispatchInfo.measurementUnit}²):`, totalsXLabel, yPosition);
-    pdf.text(totalNet.toFixed(2), totalsXValue, yPosition, { align: 'right' as const });
-    yPosition += 30;
-
-
-    // Notes and Signature
-    if (yPosition > pageHeight - margin - 80) { // Check if notes/signature need new page
-        pdf.addPage('landscape');
-        addPageHeaderAndFooter();
-        yPosition = margin + 180;
-    }
-
-    const notesX = margin;
-    const signatureX = pageWidth - margin - 200;
-
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Notes:', notesX, yPosition);
-    pdf.setFont('helvetica', 'normal');
-    // You can add a box for notes if needed:
-    // pdf.setDrawColor(BORDER_COLOR);
-    // pdf.rect(notesX, yPosition + 5, contentWidth / 2 - 20, 50); 
-    pdf.text('1. All goods received in good condition.', notesX, yPosition + 15);
-    pdf.text('2. Please verify measurements upon receipt.', notesX, yPosition + 30);
-
-
-    pdf.setDrawColor(TEXT_COLOR_DARK);
-    pdf.line(signatureX, yPosition + 40, pageWidth - margin, yPosition + 40); // Signature line
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Authorized Signature', signatureX, yPosition + 55);
-
-    // Final call to ensure footer is on the last page if content is short
-    // (Handled by addPageHeaderAndFooter on each page including the first)
-
-    // Save PDF
-    const fileName = `Dispatch_Note_${dispatchInfo.partyName || 'UnknownParty'}_${dispatchInfo.lotNumber || 'NoLot'}_${formattedDate.replace(/\//g, '-')}.pdf`;
-    pdf.save(fileName);
   };
 
 
@@ -714,16 +748,42 @@ const SlabEntry = () => {
 
             <div className="form-group">
               <label className="form-label">Party Name</label>
-              <select
-                value={dispatchInfo.partyName}
-                onChange={(e) => handleDispatchInfoChange('partyName', e.target.value)}
-                className="input-field"
-              >
-                <option value="">Select Party</option>
-                <option value="Party A">Party A</option>
-                <option value="Party B">Party B</option>
-                <option value="Party C">Party C</option>
-              </select>
+              <div className="flex space-x-2">
+                <select
+                  value={dispatchInfo.partyName}
+                  onChange={(e) => {
+                    if (e.target.value === 'ADD_NEW') {
+                      setShowAddParty(true);
+                    } else {
+                      handleDispatchInfoChange('partyName', e.target.value);
+                    }
+                  }}
+                  className="input-field flex-1"
+                >
+                  <option value="">Select Party</option>
+                  {parties.map(party => (
+                    <option key={party} value={party}>{party}</option>
+                  ))}
+                  <option value="ADD_NEW">+ Add New Party</option>
+                </select>
+              </div>
+              
+              {showAddParty && (
+                <div className="mt-2 flex space-x-2">
+                  <input
+                    type="text"
+                    value={newParty}
+                    onChange={(e) => setNewParty(e.target.value)}
+                    placeholder="Enter new party name"
+                    className="input-field flex-1"
+                  />
+                  <button type="button" onClick={addNewParty} className="btn-primary">Add</button>
+                  <button type="button" onClick={() => {
+                    setShowAddParty(false);
+                    setNewParty('');
+                  }} className="btn-secondary">Cancel</button>
+                </div>
+              )}
             </div>
 
             <div className="form-group">

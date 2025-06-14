@@ -68,7 +68,7 @@ class ApiService {
   }
 
   // Slab Measurements API
-  async createSlab(slabData: Omit<SlabMeasurement, 'id' | 'timestamp'>): Promise<SlabMeasurement> {
+  async createSlab(slabData: Omit<SlabMeasurement, '_id' | 'timestamp'>): Promise<SlabMeasurement> {
     console.log('Creating slab with data:', JSON.stringify(slabData, null, 2)); // Debug log
     try {
       // Remove any id fields from cornerDeductions
@@ -144,9 +144,20 @@ class ApiService {
   }
 
   async deleteSlab(id: string): Promise<void> {
-    return this.request<void>(`/slabs/${id}`, {
-      method: 'DELETE',
-    });
+    if (!id) {
+      throw new Error('Invalid slab ID');
+    }
+    try {
+      await this.request<void>(`/slabs/${id}`, {
+        method: 'DELETE',
+      });
+    } catch (error) {
+      console.error('Error in deleteSlab:', error);
+      if (error instanceof Error) {
+        throw new Error(`Failed to delete slab: ${error.message}`);
+      }
+      throw new Error('Failed to delete slab: Unknown error occurred');
+    }
   }
 
   async clearAllSlabs(): Promise<void> {
@@ -269,6 +280,11 @@ class ApiService {
       }
       throw new Error('Login failed: Unknown error occurred');
     }
+  }
+
+  async getCurrentUser(): Promise<{ username: string; role: string }> {
+    return this.request<{ user: { username: string; role: string } }>('/auth/me')
+      .then(response => response.user);
   }
 
   setToken(token: string) {

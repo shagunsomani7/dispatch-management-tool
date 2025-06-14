@@ -9,7 +9,7 @@ const Sidebar = () => {
   const { user } = useAuth();
 
   let menuItems: MenuItem[] = [];
-  if (user?.username === 'admin') {
+  if (user?.role === 'admin') {
     menuItems = [
       { path: '/', label: 'Dashboard', icon: '📊' },
       { path: '/entry', label: 'Slab Entry', icon: '📝' },

@@ -31,10 +31,27 @@ function AuthProvider({ children }: AuthProviderProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Clear any existing token on initial load
-    apiService.clearToken();
-    setUser(null);
-    setLoading(false);
+    const token = apiService.getToken();
+    if (token) {
+      // If we have a token, try to restore the session
+      apiService.getCurrentUser()
+        .then(userData => {
+          setUser({
+            username: userData.username,
+            role: userData.role as UserRole
+          });
+        })
+        .catch(() => {
+          // If the token is invalid, clear it
+          apiService.clearToken();
+          setUser(null);
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    } else {
+      setLoading(false);
+    }
   }, []);
 
   const login = async (username: string, password: string) => {
