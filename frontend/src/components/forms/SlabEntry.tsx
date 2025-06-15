@@ -60,10 +60,7 @@ const SlabEntry = () => {
       length: 0,
       height: 0,
       cornerDeductions: [
-        { id: '1', length: 0, height: 0, area: 0 },
-        { id: '2', length: 0, height: 0, area: 0 },
-        { id: '3', length: 0, height: 0, area: 0 },
-        { id: '4', length: 0, height: 0, area: 0 }
+        { id: '1', length: 0, height: 0, area: 0 }
       ],
       grossArea: 0,
       totalDeductionArea: 0,
@@ -210,10 +207,7 @@ const SlabEntry = () => {
           length: 0,
           height: 0,
           cornerDeductions: [
-            { id: '1', length: 0, height: 0, area: 0 },
-            { id: '2', length: 0, height: 0, area: 0 },
-            { id: '3', length: 0, height: 0, area: 0 },
-            { id: '4', length: 0, height: 0, area: 0 }
+            { id: '1', length: 0, height: 0, area: 0 }
           ],
           grossArea: 0,
           totalDeductionArea: 0,
@@ -234,10 +228,7 @@ const SlabEntry = () => {
           length: 1,
           height: 1,
           cornerDeductions: [
-            { id: '1', length: 1, height: 1, area: 1 },
-            { id: '2', length: 0, height: 0, area: 0 },
-            { id: '3', length: 0, height: 0, area: 0 },
-            { id: '4', length: 0, height: 0, area: 0 }
+            { id: '1', length: 1, height: 1, area: 1 }
           ],
           grossArea: 1,
           totalDeductionArea: 1,
@@ -265,10 +256,7 @@ const SlabEntry = () => {
         length: 0,
         height: 0,
         cornerDeductions: [
-          { id: '1', length: 0, height: 0, area: 0 },
-          { id: '2', length: 0, height: 0, area: 0 },
-          { id: '3', length: 0, height: 0, area: 0 },
-          { id: '4', length: 0, height: 0, area: 0 }
+          { id: '1', length: 0, height: 0, area: 0 }
         ],
         grossArea: 0,
         totalDeductionArea: 0,
@@ -286,10 +274,7 @@ const SlabEntry = () => {
       length: 0,
       height: 0,
       cornerDeductions: [
-        { id: '1', length: 0, height: 0, area: 0 },
-        { id: '2', length: 0, height: 0, area: 0 },
-        { id: '3', length: 0, height: 0, area: 0 },
-        { id: '4', length: 0, height: 0, area: 0 }
+        { id: '1', length: 0, height: 0, area: 0 }
       ],
       grossArea: 0,
       totalDeductionArea: 0,
@@ -707,6 +692,23 @@ const SlabEntry = () => {
     }
   };
 
+  const addCornerDeduction = (slabIndex: number) => {
+    if (slabs[slabIndex].cornerDeductions.length >= 4) return;
+    if (window.confirm('Do you really want to add a corner deduction?')) {
+      setSlabs(prev => {
+        const updated = [...prev];
+        const nextId = (updated[slabIndex].cornerDeductions.length + 1).toString();
+        updated[slabIndex] = {
+          ...updated[slabIndex],
+          cornerDeductions: [
+            ...updated[slabIndex].cornerDeductions,
+            { id: nextId, length: 0, height: 0, area: 0 }
+          ]
+        };
+        return updated;
+      });
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -958,28 +960,40 @@ const SlabEntry = () => {
                       <div key={corner.id} className="border border-gray-200 p-2 rounded">
                         <div className="text-xs font-medium text-gray-600 mb-1">Corner {cornerIndex + 1}</div>
                         <div className="space-y-1">
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={corner.length === 0 ? '' : corner.length}
-                            onChange={(e) => handleCornerDeductionChange(slabIndex, cornerIndex, 'length', parseFloat(e.target.value) || 0)}
-                            placeholder="L"
-                            className="w-full px-1 py-1 text-xs border border-gray-300 rounded"
-                          />
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={corner.height === 0 ? '' : corner.height}
-                            onChange={(e) => handleCornerDeductionChange(slabIndex, cornerIndex, 'height', parseFloat(e.target.value) || 0)}
-                            placeholder="H"
-                            className="w-full px-1 py-1 text-xs border border-gray-300 rounded"
-                          />
+                          <div className="flex space-x-1 mb-1">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={corner.length === 0 ? '' : corner.length}
+                              onChange={(e) => handleCornerDeductionChange(slabIndex, cornerIndex, 'length', parseFloat(e.target.value) || 0)}
+                              placeholder="L"
+                              className="w-1/2 px-1 py-1 text-xs border border-gray-300 rounded"
+                            />
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={corner.height === 0 ? '' : corner.height}
+                              onChange={(e) => handleCornerDeductionChange(slabIndex, cornerIndex, 'height', parseFloat(e.target.value) || 0)}
+                              placeholder="H"
+                              className="w-1/2 px-1 py-1 text-xs border border-gray-300 rounded"
+                            />
+                          </div>
                           <div className="text-xs text-gray-500">
                             Area: {corner.area.toFixed(2)}
                           </div>
                         </div>
                       </div>
                     ))}
+                  </div>
+                  <div className="mt-2">
+                    <button
+                      type="button"
+                      onClick={() => addCornerDeduction(slabIndex)}
+                      className="btn-secondary text-xs"
+                      disabled={slab.cornerDeductions.length >= 4}
+                    >
+                      Add Corner
+                    </button>
                   </div>
                 </div>
               </div>
