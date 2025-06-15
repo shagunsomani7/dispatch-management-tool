@@ -10,6 +10,7 @@ const mongoose = require('mongoose');
 const slabRoutes = require('./src/routes/slabRoutes');
 const reportRoutes = require('./src/routes/reportRoutes');
 const authRoutes = require('./src/routes/authRoutes');
+const partyRoutes = require('./src/routes/partyRoutes');
 
 // Load environment variables
 dotenv.config();
@@ -32,6 +33,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/api/slabs', slabRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/parties', partyRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

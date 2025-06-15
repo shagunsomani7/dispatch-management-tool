@@ -294,6 +294,21 @@ class ApiService {
   clearToken() {
     localStorage.removeItem('token');
   }
+
+  // Party API
+  async getParties(q?: string): Promise<{ _id: string; name: string }[]> {
+    const query = q ? `?q=${encodeURIComponent(q)}` : '';
+    return this.request<{ _id: string; name: string }[]>(`/parties${query}`, {
+      method: 'GET',
+    });
+  }
+
+  async createParty(name: string): Promise<{ _id: string; name: string }> {
+    return this.request<{ _id: string; name: string }>(`/parties`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+  }
 }
 
 export const apiService = new ApiService();

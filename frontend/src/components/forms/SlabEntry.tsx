@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { MeasurementUnit, CornerDeduction } from '../../types';
 import { apiService } from '../../services/api';
 import jsPDF from 'jspdf';
@@ -40,16 +40,16 @@ const SlabEntry = () => {
   ]);
 
   // Party options with ability to add new
-  const [parties, setParties] = useState([
-    'Party A',
-    'Party B',
-    'Party C'
-  ]);
+  const [parties, setParties] = useState<string[]>([]);
+  const [partyQuery, setPartyQuery] = useState('');
+  const [loadingParties, setLoadingParties] = useState(false);
 
   const [showAddMaterial, setShowAddMaterial] = useState(false);
   const [newMaterial, setNewMaterial] = useState('');
   const [showAddParty, setShowAddParty] = useState(false);
   const [newParty, setNewParty] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const inputRef = useRef(null);
 
   // Multiple slabs (minimum 5)
   const [slabs, setSlabs] = useState<SlabFormData[]>(() => 
@@ -68,6 +68,22 @@ const SlabEntry = () => {
     }))
   );
 
+  // Fetch parties from backend as user types
+  useEffect(() => {
+    let active = true;
+    setLoadingParties(true);
+    apiService.getParties(partyQuery)
+      .then((data) => {
+        if (active) {
+          setParties(data.map((p: { name: string }) => p.name));
+        }
+      })
+      .finally(() => {
+        if (active) setLoadingParties(false);
+      });
+    return () => { active = false; };
+  }, [partyQuery]);
+
   const handleDispatchInfoChange = (field: string, value: any) => {
     setDispatchInfo(prev => ({
       ...prev,
@@ -84,12 +100,17 @@ const SlabEntry = () => {
     }
   };
 
-  const addNewParty = () => {
-    if (newParty.trim() && !parties.includes(newParty.trim())) {
-      setParties(prev => [...prev, newParty.trim()]);
-      setDispatchInfo(prev => ({ ...prev, partyName: newParty.trim() }));
-      setNewParty('');
-      setShowAddParty(false);
+  const addNewParty = async () => {
+    if (newParty.trim()) {
+      try {
+        const created = await apiService.createParty(newParty.trim());
+        setDispatchInfo(prev => ({ ...prev, partyName: created.name }));
+        setNewParty('');
+        setShowAddParty(false);
+        setPartyQuery('');
+      } catch (err) {
+        alert((err as Error).message || 'Failed to add party');
+      }
     }
   };
 
@@ -813,26 +834,65 @@ const SlabEntry = () => {
 
             <div className="form-group">
               <label className="form-label">Party Name</label>
-              <div className="flex space-x-2">
-                <select
+              <div className="relative">
+                <input
+                  ref={inputRef}
+                  type="text"
                   value={dispatchInfo.partyName}
-                  onChange={(e) => {
-                    if (e.target.value === 'ADD_NEW') {
-                      setShowAddParty(true);
-                    } else {
-                      handleDispatchInfoChange('partyName', e.target.value);
-                    }
+                  onChange={e => {
+                    handleDispatchInfoChange('partyName', e.target.value);
+                    setPartyQuery(e.target.value);
+                    setShowSuggestions(true);
                   }}
-                  className="input-field flex-1"
-                >
-                  <option value="">Select Party</option>
-                  {parties.map(party => (
-                    <option key={party} value={party}>{party}</option>
-                  ))}
-                  <option value="ADD_NEW">+ Add New Party</option>
-                </select>
+                  onFocus={() => setShowSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                  className="input-field w-full"
+                  placeholder="Type or select party name"
+                  autoComplete="off"
+                />
+                {/* Suggestions dropdown */}
+                {showSuggestions && (
+                  <ul className="absolute z-10 left-0 right-0 bg-white border border-gray-200 rounded shadow mt-1 max-h-52 overflow-y-auto">
+                    {loadingParties ? (
+                      <li className="px-4 py-2 text-gray-500">Loading...</li>
+                    ) : parties.length === 0 ? (
+                      <li className="px-4 py-2 text-gray-500">No parties found</li>
+                    ) : parties.map(party => (
+                      <li
+                        key={party}
+                        className="px-4 py-2 hover:bg-primary-100 cursor-pointer"
+                        onMouseDown={() => {
+                          handleDispatchInfoChange('partyName', party);
+                          setShowSuggestions(false);
+                        }}
+                      >
+                        {party}
+                      </li>
+                    ))}
+                    <li className="border-t border-gray-200">
+                      <button
+                        type="button"
+                        className="w-full text-left px-4 py-2 hover:bg-primary-100 text-primary-700 font-medium"
+                        onMouseDown={() => {
+                          const confirmAdd = window.confirm(
+                            dispatchInfo.partyName
+                              ? `Do you want to add '${dispatchInfo.partyName}' as a new party?`
+                              : 'Do you want to add a new party?'
+                          );
+                          if (confirmAdd) {
+                            setShowAddParty(true);
+                            setShowSuggestions(false);
+                            setNewParty(dispatchInfo.partyName || '');
+                          }
+                        }}
+                      >
+                        + Add New Party
+                      </button>
+                    </li>
+                  </ul>
+                )}
               </div>
-              
+
               {showAddParty && (
                 <div className="mt-2 flex space-x-2">
                   <input
