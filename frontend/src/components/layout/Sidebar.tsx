@@ -4,7 +4,12 @@ import { useAuth } from '../../App';
 
 type MenuItem = { path: string; label: string; icon: string };
 
-const Sidebar = () => {
+interface SidebarProps {
+  isMobile?: boolean;
+  onClose?: () => void;
+}
+
+const Sidebar: React.FC<SidebarProps> = ({ isMobile = false, onClose }) => {
   const location = useLocation();
   const { user } = useAuth();
 
@@ -23,8 +28,23 @@ const Sidebar = () => {
   }
 
   return (
-    <aside className="w-64 bg-white border-r border-gray-200 min-h-screen">
-      <nav className="p-4">
+    <aside
+      className={
+        isMobile
+          ? 'fixed left-0 top-0 w-64 h-full bg-white border-r border-gray-200 z-50 shadow-lg transition-transform duration-200'
+          : 'w-64 bg-white border-r border-gray-200 min-h-screen'
+      }
+    >
+      {isMobile && (
+        <button
+          className="absolute top-3 right-3 text-gray-600 hover:text-gray-900 text-2xl"
+          onClick={onClose}
+          aria-label="Close sidebar"
+        >
+          &times;
+        </button>
+      )}
+      <nav className="p-4 mt-8">
         <ul className="space-y-2">
           {menuItems.map((item) => (
             <li key={item.path}>
@@ -35,6 +55,7 @@ const Sidebar = () => {
                     ? 'bg-primary-100 text-primary-700'
                     : 'text-gray-600 hover:bg-gray-100'
                 }`}
+                onClick={isMobile && onClose ? onClose : undefined}
               >
                 <span className="text-lg">{item.icon}</span>
                 <span className="font-medium">{item.label}</span>

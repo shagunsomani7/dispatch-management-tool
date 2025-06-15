@@ -911,11 +911,11 @@ const SlabEntry = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Basic Measurements - Rearranged to L-H-T order */}
                 <div className="space-y-4">
                   <h5 className="font-medium text-gray-700">Basic Measurements (L × H × T)</h5>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                       <label className="form-label text-xs">Length ({dispatchInfo.measurementUnit})</label>
                       <input
@@ -923,7 +923,7 @@ const SlabEntry = () => {
                         step="0.01"
                         value={slab.length === 0 ? '' : slab.length}
                         onChange={(e) => handleSlabChange(slabIndex, 'length', parseFloat(e.target.value) || 0)}
-                        className="input-field text-sm"
+                        className="input-field text-sm w-full py-2 md:py-1"
                         placeholder="0.00"
                       />
                     </div>
@@ -934,7 +934,7 @@ const SlabEntry = () => {
                         step="0.01"
                         value={slab.height === 0 ? '' : slab.height}
                         onChange={(e) => handleSlabChange(slabIndex, 'height', parseFloat(e.target.value) || 0)}
-                        className="input-field text-sm"
+                        className="input-field text-sm w-full py-2 md:py-1"
                         placeholder="0.00"
                       />
                     </div>
@@ -945,7 +945,7 @@ const SlabEntry = () => {
                         step="0.01"
                         value={slab.thickness === 0 ? '' : slab.thickness}
                         onChange={(e) => handleSlabChange(slabIndex, 'thickness', parseFloat(e.target.value) || 0)}
-                        className="input-field text-sm"
+                        className="input-field text-sm w-full py-2 md:py-1"
                         placeholder="0.00"
                       />
                     </div>
@@ -955,32 +955,30 @@ const SlabEntry = () => {
                 {/* Corner Deductions - Single Row */}
                 <div className="space-y-4">
                   <h5 className="font-medium text-gray-700">Corner Deductions</h5>
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="flex flex-col space-y-2 sm:grid sm:grid-cols-4 sm:gap-2">
                     {slab.cornerDeductions.map((corner, cornerIndex) => (
-                      <div key={corner.id} className="border border-gray-200 p-2 rounded">
+                      <div key={corner.id} className="border border-gray-200 p-2 rounded flex flex-col">
                         <div className="text-xs font-medium text-gray-600 mb-1">Corner {cornerIndex + 1}</div>
-                        <div className="space-y-1">
-                          <div className="flex space-x-1 mb-1">
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={corner.length === 0 ? '' : corner.length}
-                              onChange={(e) => handleCornerDeductionChange(slabIndex, cornerIndex, 'length', parseFloat(e.target.value) || 0)}
-                              placeholder="L"
-                              className="w-1/2 px-1 py-1 text-xs border border-gray-300 rounded"
-                            />
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={corner.height === 0 ? '' : corner.height}
-                              onChange={(e) => handleCornerDeductionChange(slabIndex, cornerIndex, 'height', parseFloat(e.target.value) || 0)}
-                              placeholder="H"
-                              className="w-1/2 px-1 py-1 text-xs border border-gray-300 rounded"
-                            />
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            Area: {corner.area.toFixed(2)}
-                          </div>
+                        <div className="flex space-x-1 mb-1">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={corner.length === 0 ? '' : corner.length}
+                            onChange={(e) => handleCornerDeductionChange(slabIndex, cornerIndex, 'length', parseFloat(e.target.value) || 0)}
+                            placeholder="L"
+                            className="w-1/2 px-1 py-2 md:py-1 text-xs border border-gray-300 rounded"
+                          />
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={corner.height === 0 ? '' : corner.height}
+                            onChange={(e) => handleCornerDeductionChange(slabIndex, cornerIndex, 'height', parseFloat(e.target.value) || 0)}
+                            placeholder="H"
+                            className="w-1/2 px-1 py-2 md:py-1 text-xs border border-gray-300 rounded"
+                          />
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          Area: {corner.area.toFixed(2)}
                         </div>
                       </div>
                     ))}
@@ -989,7 +987,7 @@ const SlabEntry = () => {
                     <button
                       type="button"
                       onClick={() => addCornerDeduction(slabIndex)}
-                      className="btn-secondary text-xs"
+                      className="btn-secondary text-xs w-full sm:w-auto"
                       disabled={slab.cornerDeductions.length >= 4}
                     >
                       Add Corner
@@ -999,7 +997,7 @@ const SlabEntry = () => {
               </div>
 
               {/* Calculated Results */}
-              <div className="mt-4 grid grid-cols-3 gap-4 bg-gray-50 p-3 rounded">
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4 bg-gray-50 p-3 rounded">
                 <div className="text-center">
                   <div className="text-xs text-gray-600">Gross Area</div>
                   <div className="font-semibold text-blue-600">{slab.grossArea.toFixed(2)} ft²</div>
@@ -1039,14 +1037,14 @@ const SlabEntry = () => {
           <div className="flex flex-col sm:flex-row justify-center space-y-3 sm:space-y-0 sm:space-x-4">
             <button 
               type="submit" 
-              className="btn-primary text-lg px-8 py-3 min-w-48"
+              className="btn-primary text-lg px-8 py-3 min-w-48 w-full sm:w-auto"
             >
               💾 Save to Database
             </button>
             <button 
               type="button"
               onClick={generatePDF}
-              className="bg-green-600 text-white font-medium text-lg px-8 py-3 rounded-lg cursor-pointer hover:bg-green-700 min-w-48"
+              className="bg-green-600 text-white font-medium text-lg px-8 py-3 rounded-lg cursor-pointer hover:bg-green-700 min-w-48 w-full sm:w-auto"
             >
               📄 Download PDF Report
             </button>
