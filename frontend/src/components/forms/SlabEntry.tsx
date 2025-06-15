@@ -224,16 +224,33 @@ const SlabEntry = () => {
     }
   };
 
+  const fillDefaultSlab = (slabIndex: number) => {
+    if (window.confirm(`Are you sure you want to fill all values with default for Slab #${slabIndex + 1}?`)) {
+      setSlabs(prev => {
+        const updated = [...prev];
+        updated[slabIndex] = {
+          ...updated[slabIndex],
+          thickness: 1,
+          length: 1,
+          height: 1,
+          cornerDeductions: [
+            { id: '1', length: 1, height: 1, area: 1 },
+            { id: '2', length: 0, height: 0, area: 0 },
+            { id: '3', length: 0, height: 0, area: 0 },
+            { id: '4', length: 0, height: 0, area: 0 }
+          ],
+          grossArea: 1,
+          totalDeductionArea: 1,
+          netArea: 0
+        };
+        return updated;
+      });
+    }
+  };
+
   const removeSlab = (slabIndex: number) => {
     if (slabs.length > 1) { 
-      setSlabs(prev => {
-        const updated = prev.filter((_, index) => index !== slabIndex);
-        return updated.map((slab, index) => ({
-          ...slab,
-          slabNumber: index + 1,
-          id: `slab-${index + 1}`
-        }));
-      });
+      setSlabs(prev => prev.filter((_, index) => index !== slabIndex));
     } else {
       alert('Cannot remove the last slab. At least one slab is required.');
     }
@@ -869,6 +886,13 @@ const SlabEntry = () => {
                     className="bg-orange-600 text-white font-medium py-1 px-3 rounded-lg cursor-pointer hover:bg-orange-700 text-sm"
                   >
                     Clear
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fillDefaultSlab(slabIndex)}
+                    className="bg-gray-500 text-white font-medium py-1 px-3 rounded-lg cursor-pointer hover:bg-gray-700 text-sm"
+                  >
+                    Fill Default
                   </button>
                   {slabs.length > 1 && (
                     <button
