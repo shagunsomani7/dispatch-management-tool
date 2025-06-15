@@ -105,7 +105,16 @@ const SlabEntry = () => {
       };
       
       const slab = updated[slabIndex];
-      slab.grossArea = slab.length * slab.height;
+      // Convert to feet for area calculation
+      const lengthInFeet = slab.length * (dispatchInfo.measurementUnit === 'inches' ? 1/12 : 
+                                        dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 
+                                        dispatchInfo.measurementUnit === 'mm' ? 0.00328084 : 1);
+      
+      const heightInFeet = slab.height * (dispatchInfo.measurementUnit === 'inches' ? 1/12 : 
+                                        dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 
+                                        dispatchInfo.measurementUnit === 'mm' ? 0.00328084 : 1);
+      
+      slab.grossArea = lengthInFeet * heightInFeet;
       slab.totalDeductionArea = slab.cornerDeductions.reduce((sum, corner) => sum + corner.area, 0);
       slab.netArea = slab.grossArea - slab.totalDeductionArea;
       
@@ -118,12 +127,30 @@ const SlabEntry = () => {
       const updated = [...prev];
       const corner = { ...updated[slabIndex].cornerDeductions[cornerIndex] };
       corner[field] = value;
-      corner.area = corner.length * corner.height;
+      
+      // Convert to feet for area calculation
+      const cornerLengthInFeet = corner.length * (dispatchInfo.measurementUnit === 'inches' ? 1/12 : 
+                                                dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 
+                                                dispatchInfo.measurementUnit === 'mm' ? 0.00328084 : 1);
+      
+      const cornerHeightInFeet = corner.height * (dispatchInfo.measurementUnit === 'inches' ? 1/12 : 
+                                                dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 
+                                                dispatchInfo.measurementUnit === 'mm' ? 0.00328084 : 1);
+      
+      corner.area = cornerLengthInFeet * cornerHeightInFeet;
       
       updated[slabIndex].cornerDeductions[cornerIndex] = corner;
       
       const slab = updated[slabIndex];
-      slab.grossArea = slab.length * slab.height;
+      const lengthInFeet = slab.length * (dispatchInfo.measurementUnit === 'inches' ? 1/12 : 
+                                        dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 
+                                        dispatchInfo.measurementUnit === 'mm' ? 0.00328084 : 1);
+      
+      const heightInFeet = slab.height * (dispatchInfo.measurementUnit === 'inches' ? 1/12 : 
+                                        dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 
+                                        dispatchInfo.measurementUnit === 'mm' ? 0.00328084 : 1);
+      
+      slab.grossArea = lengthInFeet * heightInFeet;
       slab.totalDeductionArea = slab.cornerDeductions.reduce((sum, c) => sum + c.area, 0);
       slab.netArea = slab.grossArea - slab.totalDeductionArea;
       
@@ -145,10 +172,29 @@ const SlabEntry = () => {
         };
         
         const slab = updated[currentIndex];
-        slab.grossArea = slab.length * slab.height;
+        // Recalculate areas in ft²
+        const lengthInFeet = slab.length * (dispatchInfo.measurementUnit === 'inches' ? 1/12 : 
+                                          dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 
+                                          dispatchInfo.measurementUnit === 'mm' ? 0.00328084 : 1);
+        const heightInFeet = slab.height * (dispatchInfo.measurementUnit === 'inches' ? 1/12 : 
+                                          dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 
+                                          dispatchInfo.measurementUnit === 'mm' ? 0.00328084 : 1);
+        slab.grossArea = lengthInFeet * heightInFeet;
+        // Recalculate deduction areas in ft²
+        slab.cornerDeductions = slab.cornerDeductions.map(corner => {
+          const cornerLengthInFeet = corner.length * (dispatchInfo.measurementUnit === 'inches' ? 1/12 : 
+                                                    dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 
+                                                    dispatchInfo.measurementUnit === 'mm' ? 0.00328084 : 1);
+          const cornerHeightInFeet = corner.height * (dispatchInfo.measurementUnit === 'inches' ? 1/12 : 
+                                                    dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 
+                                                    dispatchInfo.measurementUnit === 'mm' ? 0.00328084 : 1);
+          return {
+            ...corner,
+            area: cornerLengthInFeet * cornerHeightInFeet
+          };
+        });
         slab.totalDeductionArea = slab.cornerDeductions.reduce((sum, corner) => sum + corner.area, 0);
         slab.netArea = slab.grossArea - slab.totalDeductionArea;
-        
         return updated;
       });
     }
@@ -834,7 +880,7 @@ const SlabEntry = () => {
                     </button>
                   )}
                   <div className="text-sm text-gray-600">
-                    Net Area: {slab.netArea.toFixed(2)} {dispatchInfo.measurementUnit}²
+                    Net Area: {slab.netArea.toFixed(2)} ft²
                   </div>
                 </div>
               </div>
@@ -918,15 +964,15 @@ const SlabEntry = () => {
               <div className="mt-4 grid grid-cols-3 gap-4 bg-gray-50 p-3 rounded">
                 <div className="text-center">
                   <div className="text-xs text-gray-600">Gross Area</div>
-                  <div className="font-semibold text-blue-600">{slab.grossArea.toFixed(2)} {dispatchInfo.measurementUnit}²</div>
+                  <div className="font-semibold text-blue-600">{slab.grossArea.toFixed(2)} ft²</div>
                 </div>
                 <div className="text-center">
                   <div className="text-xs text-gray-600">Deductions</div>
-                  <div className="font-semibold text-orange-600">{slab.totalDeductionArea.toFixed(2)} {dispatchInfo.measurementUnit}²</div>
+                  <div className="font-semibold text-orange-600">{slab.totalDeductionArea.toFixed(2)} ft²</div>
                 </div>
                 <div className="text-center">
                   <div className="text-xs text-gray-600">Net Area</div>
-                  <div className="font-semibold text-green-600">{slab.netArea.toFixed(2)} {dispatchInfo.measurementUnit}²</div>
+                  <div className="font-semibold text-green-600">{slab.netArea.toFixed(2)} ft²</div>
                 </div>
               </div>
             </div>
@@ -944,7 +990,7 @@ const SlabEntry = () => {
               </div>
               <div>
                 <div className="text-sm text-blue-700">Total Net Area</div>
-                <div className="text-2xl font-bold text-blue-900">{getTotalArea().toFixed(2)} {dispatchInfo.measurementUnit}²</div>
+                <div className="text-2xl font-bold text-blue-900">{getTotalArea().toFixed(2)} ft²</div>
               </div>
             </div>
           </div>

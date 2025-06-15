@@ -365,7 +365,7 @@ const SlabList = () => {
                               {new Date(dispatch.dispatchTimestamp).toLocaleString()}
                             </div>
                             <div className="text-lg font-semibold text-blue-900">
-                              {dispatch.slabs.length} slabs • {dispatch.totalNetArea.toFixed(2)} {dispatch.slabs[0]?.measurementUnit}²
+                              {dispatch.slabs.length} slabs • {dispatch.totalNetArea.toFixed(2)} ft²
                             </div>
                           </div>
                         </div>
@@ -390,13 +390,13 @@ const SlabList = () => {
                                   {slab.thickness} × {slab.length} × {slab.height} {slab.measurementUnit}
                                 </td>
                                 <td className="px-4 py-2">
-                                  {slab.grossArea.toFixed(2)} {slab.measurementUnit}²
+                                  {slab.grossArea.toFixed(2)} ft²
                                 </td>
                                 <td className="px-4 py-2">
-                                  {slab.totalDeductionArea.toFixed(2)} {slab.measurementUnit}²
+                                  {slab.totalDeductionArea.toFixed(2)} ft²
                                 </td>
                                 <td className="px-4 py-2 font-semibold text-green-600">
-                                  {slab.netArea.toFixed(2)} {slab.measurementUnit}²
+                                  {slab.netArea.toFixed(2)} ft²
                                 </td>
                                 <td className="px-4 py-2">
                                   <button

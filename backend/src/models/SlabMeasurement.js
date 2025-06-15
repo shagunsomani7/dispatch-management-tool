@@ -126,16 +126,33 @@ slabMeasurementSchema.index({ supervisorName: 1, createdAt: -1 });
 
 // Pre-save middleware to calculate areas
 slabMeasurementSchema.pre('save', function(next) {
-    // Calculate gross area
-    this.grossArea = this.length * this.height;
+    // Convert measurements to feet first
+    const lengthInFeet = this.length * (this.measurementUnit === 'inches' ? 1 / 12 :
+        this.measurementUnit === 'cm' ? 0.0328084 :
+        this.measurementUnit === 'mm' ? 0.00328084 : 1);
 
-    // Calculate total deduction area
+    const heightInFeet = this.height * (this.measurementUnit === 'inches' ? 1 / 12 :
+        this.measurementUnit === 'cm' ? 0.0328084 :
+        this.measurementUnit === 'mm' ? 0.00328084 : 1);
+
+    // Calculate gross area in square feet
+    this.grossArea = lengthInFeet * heightInFeet;
+
+    // Calculate total deduction area in square feet
     this.totalDeductionArea = this.cornerDeductions.reduce((total, corner) => {
-        corner.area = corner.length * corner.height;
+        const cornerLengthInFeet = corner.length * (this.measurementUnit === 'inches' ? 1 / 12 :
+            this.measurementUnit === 'cm' ? 0.0328084 :
+            this.measurementUnit === 'mm' ? 0.00328084 : 1);
+
+        const cornerHeightInFeet = corner.height * (this.measurementUnit === 'inches' ? 1 / 12 :
+            this.measurementUnit === 'cm' ? 0.0328084 :
+            this.measurementUnit === 'mm' ? 0.00328084 : 1);
+
+        corner.area = cornerLengthInFeet * cornerHeightInFeet;
         return total + corner.area;
     }, 0);
 
-    // Calculate net area
+    // Calculate net area in square feet
     this.netArea = this.grossArea - this.totalDeductionArea;
 
     // Update timestamp
