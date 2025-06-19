@@ -25,7 +25,8 @@ app.use(morgan('combined'));
 app.use(cors({
     origin: [
         'http://localhost:3000',
-        'http://192.168.29.193:3000'
+        'http://192.168.29.193:3000',
+        'https://dispatch-management-tool-frontend.onrender.com/'
     ],
     credentials: true
 }));
