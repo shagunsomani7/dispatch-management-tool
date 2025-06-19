@@ -26,7 +26,7 @@ app.use(cors({
     origin: [
         'http://localhost:3000',
         'http://192.168.29.193:3000',
-        'https://dispatch-management-tool-frontend.onrender.com/'
+        'https://dispatch-management-tool-frontend.onrender.com'
     ],
     credentials: true
 }));
@@ -103,7 +103,7 @@ const startServer = async() => {
     // Try to connect to database but don't fail if it's not available
     await connectDB();
 
-    app.listen(PORT, () => {
+    app.listen(PORT, '0.0.0.0', () => {
         console.log('\n🚀 Server Status:');
         console.log(`   Port: ${PORT}`);
         console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
