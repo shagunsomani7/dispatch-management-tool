@@ -4,31 +4,50 @@ import { apiService } from '../../services/api';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../App';
 
 interface SlabFormData {
   id: string;
   slabNumber: number;
-  thickness: number;
   length: number;
   height: number;
   cornerDeductions: CornerDeduction[];
   grossArea: number;
   totalDeductionArea: number;
   netArea: number;
+  remarks?: string;
 }
 
 const SlabEntry = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   // Common dispatch information
   const [dispatchInfo, setDispatchInfo] = useState({
     materialName: '',
     lotNumber: '',
     dispatchVehicleNumber: '',
-    supervisorName: '',
+    supervisorName: user?.username || '',
     partyName: '',
-    measurementUnit: 'inches' as MeasurementUnit
+    measurementUnit: 'inches' as MeasurementUnit,
+    thickness: 16 // Default thickness
   });
+
+  // Thickness options
+  const thicknessOptions = [16, 18, 20];
+  const [showThicknessSuggestions, setShowThicknessSuggestions] = useState(false);
+
+  // Remarks options
+  const remarksOptions = [
+    "Slab inspected for surface defects and calibrated to 20 mm thickness.",
+    "Polished finish completed at 85+ gloss units – factory standard.",
+    "Minor natural variations present; consistent with lot characteristics.",
+    "Resin treatment and mesh backing applied for structural integrity.",
+    "No cracks, edge repairs, or open holes observed during final QC."
+  ];
+
+  // Error state
+  const [errors, setErrors] = useState<{[key: string]: string}>({});
 
   // Material options with ability to add new
   const [materials, setMaterials] = useState([
@@ -56,7 +75,6 @@ const SlabEntry = () => {
     Array.from({ length: 5 }, (_, index) => ({
       id: `slab-${index + 1}`,
       slabNumber: index + 1,
-      thickness: 0,
       length: 0,
       height: 0,
       cornerDeductions: [
@@ -64,7 +82,8 @@ const SlabEntry = () => {
       ],
       grossArea: 0,
       totalDeductionArea: 0,
-      netArea: 0
+      netArea: 0,
+      remarks: ''
     }))
   );
 
@@ -114,7 +133,7 @@ const SlabEntry = () => {
     }
   };
 
-  const handleSlabChange = (slabIndex: number, field: string, value: number) => {
+  const handleSlabChange = (slabIndex: number, field: string, value: number | string) => {
     setSlabs(prev => {
       const updated = [...prev];
       updated[slabIndex] = {
@@ -183,7 +202,6 @@ const SlabEntry = () => {
         const updated = [...prev];
         updated[currentIndex] = {
           ...updated[currentIndex],
-          thickness: previousSlab.thickness,
           length: previousSlab.length,
           height: previousSlab.height,
           cornerDeductions: previousSlab.cornerDeductions.map(corner => ({ ...corner }))
@@ -224,7 +242,6 @@ const SlabEntry = () => {
         const updated = [...prev];
         updated[slabIndex] = {
           ...updated[slabIndex],
-          thickness: 0,
           length: 0,
           height: 0,
           cornerDeductions: [
@@ -232,7 +249,8 @@ const SlabEntry = () => {
           ],
           grossArea: 0,
           totalDeductionArea: 0,
-          netArea: 0
+          netArea: 0,
+          remarks: ''
         };
         return updated;
       });
@@ -245,7 +263,6 @@ const SlabEntry = () => {
         const updated = [...prev];
         updated[slabIndex] = {
           ...updated[slabIndex],
-          thickness: 1,
           length: 1,
           height: 1,
           cornerDeductions: [
@@ -273,7 +290,6 @@ const SlabEntry = () => {
       setSlabs(prev => prev.map((slab, index) => ({
         id: `slab-${index + 1}`,
         slabNumber: index + 1,
-        thickness: 0,
         length: 0,
         height: 0,
         cornerDeductions: [
@@ -291,7 +307,6 @@ const SlabEntry = () => {
     setSlabs(prev => [...prev, {
       id: `slab-${newSlabNumber}`,
       slabNumber: newSlabNumber,
-      thickness: 0,
       length: 0,
       height: 0,
       cornerDeductions: [
@@ -303,20 +318,64 @@ const SlabEntry = () => {
     }]);
   };
 
+  const handleSlabNumberChange = (slabIndex: number, value: string) => {
+    // Remove leading zeros and convert to number
+    const number = parseInt(value.replace(/^0+/, '')) || 0;
+    setSlabs(prev => {
+      const updated = [...prev];
+      updated[slabIndex] = {
+        ...updated[slabIndex],
+        slabNumber: number
+      };
+      return updated;
+    });
+  };
+
+  const validateSlabNumber = (slabIndex: number, number: number) => {
+    const isDuplicate = slabs.some((slab, index) => 
+      index !== slabIndex && slab.slabNumber === number
+    );
+
+    if (isDuplicate) {
+      setErrors(prev => ({
+        ...prev,
+        [`slab-${slabIndex}-number`]: 'Slab number must be unique'
+      }));
+      return false;
+    }
+
+    setErrors(prev => {
+      const newErrors = { ...prev };
+      delete newErrors[`slab-${slabIndex}-number`];
+      return newErrors;
+    });
+    return true;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     try {
       // Validate dispatch info
-      if (!dispatchInfo.materialName || !dispatchInfo.lotNumber || !dispatchInfo.dispatchVehicleNumber || 
-          !dispatchInfo.supervisorName || !dispatchInfo.partyName) {
-        alert('Please fill in all dispatch information fields');
+      if (!dispatchInfo.materialName || !dispatchInfo.lotNumber || 
+          !dispatchInfo.supervisorName || !dispatchInfo.partyName || !dispatchInfo.thickness) {
+        alert('Please fill in all mandatory dispatch information fields');
         return;
+      }
+
+      // Check for empty vehicle number
+      if (!dispatchInfo.dispatchVehicleNumber) {
+        const proceedWithoutVehicle = window.confirm(
+          'Vehicle number is empty. Do you wish to proceed without adding vehicle information?'
+        );
+        if (!proceedWithoutVehicle) {
+          return;
+        }
       }
 
       // Filter valid slabs
       const validSlabs = slabs.filter(slab => 
-        slab.thickness > 0 && slab.length > 0 && slab.height > 0
+        slab.length > 0 && slab.height > 0
       );
 
       if (validSlabs.length === 0) {
@@ -346,11 +405,11 @@ const SlabEntry = () => {
           dispatchTimestamp,
           materialName: dispatchInfo.materialName,
           lotNumber: dispatchInfo.lotNumber,
-          dispatchVehicleNumber: dispatchInfo.dispatchVehicleNumber,
+          dispatchVehicleNumber: dispatchInfo.dispatchVehicleNumber || 'Not Specified',
           supervisorName: dispatchInfo.supervisorName,
           partyName: dispatchInfo.partyName,
           slabNumber: slab.slabNumber,
-          thickness: slab.thickness,
+          thickness: dispatchInfo.thickness,
           length: slab.length,
           height: slab.height,
           cornerDeductions: slab.cornerDeductions.map(({ length, height, area }) => ({
@@ -361,10 +420,10 @@ const SlabEntry = () => {
           measurementUnit: dispatchInfo.measurementUnit,
           grossArea,
           totalDeductionArea,
-          netArea
+          netArea,
+          remarks: slab.remarks
         };
         
-        console.log('Saving slab data:', slabData); // Debug log
         try {
           const savedSlab = await apiService.createSlab(slabData);
           savedSlabs.push(savedSlab);
@@ -375,12 +434,85 @@ const SlabEntry = () => {
           } else {
             alert(`Error saving slab ${slab.slabNumber}: Unknown error occurred`);
           }
-          throw error; // Re-throw to stop the process
+          throw error;
         }
       }
-      alert(`Successfully saved ${savedSlabs.length} slabs to database!`);
-      // Navigate to slabs database page after successful save
-      navigate('/slabs', { state: { preserveScroll: true } });
+
+      // After successful save, show success message and prompt for PDF
+      const shouldGeneratePDF = window.confirm(
+        `Successfully saved ${savedSlabs.length} slabs to database!\n\nWould you like to generate the report?`
+      );
+
+      if (shouldGeneratePDF) {
+        const pdf = await generatePDF();
+        if (pdf) {
+          // Create a modal for download/share options
+          const modal = document.createElement('div');
+          modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+          modal.innerHTML = `
+            <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+              <h3 class="text-lg font-semibold mb-4">Report Generated Successfully!</h3>
+              <div class="space-y-4">
+                <button id="downloadBtn" class="w-full bg-green-600 text-white font-medium py-2 px-4 rounded-lg hover:bg-green-700 flex items-center justify-center space-x-2">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                  </svg>
+                  <span>Download PDF</span>
+                </button>
+                <button id="shareBtn" class="w-full bg-blue-600 text-white font-medium py-2 px-4 rounded-lg hover:bg-blue-700 flex items-center justify-center space-x-2">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
+                  </svg>
+                  <span>Share Report</span>
+                </button>
+                <button id="closeBtn" class="w-full bg-gray-200 text-gray-700 font-medium py-2 px-4 rounded-lg hover:bg-gray-300">
+                  Close
+                </button>
+              </div>
+            </div>
+          `;
+
+          document.body.appendChild(modal);
+
+          // Add event listeners
+          modal.querySelector('#downloadBtn')?.addEventListener('click', () => {
+            pdf.save(`Dispatch_Note_${dispatchInfo.partyName || 'UnknownParty'}_${dispatchInfo.lotNumber || 'NoLot'}_${new Date().toISOString().split('T')[0]}.pdf`);
+            modal.remove();
+            navigate('/slabs', { state: { preserveScroll: true } });
+          });
+
+          modal.querySelector('#shareBtn')?.addEventListener('click', async () => {
+            try {
+              const pdfBlob = pdf.output('blob');
+              const file = new File([pdfBlob], `Dispatch_Note_${dispatchInfo.partyName || 'UnknownParty'}_${dispatchInfo.lotNumber || 'NoLot'}_${new Date().toISOString().split('T')[0]}.pdf`, { type: 'application/pdf' });
+              
+              if (navigator.share) {
+                await navigator.share({
+                  files: [file],
+                  title: 'Dispatch Report',
+                  text: `Dispatch report for ${dispatchInfo.partyName} - Lot ${dispatchInfo.lotNumber}`
+                });
+              } else {
+                // Fallback for browsers that don't support sharing
+                alert('Sharing is not supported on this browser. Please download the report instead.');
+              }
+            } catch (error) {
+              console.error('Error sharing:', error);
+              alert('Error sharing the report. Please download it instead.');
+            }
+            modal.remove();
+            navigate('/slabs', { state: { preserveScroll: true } });
+          });
+
+          modal.querySelector('#closeBtn')?.addEventListener('click', () => {
+            modal.remove();
+            navigate('/slabs', { state: { preserveScroll: true } });
+          });
+        }
+      } else {
+        // Navigate to slabs database page after successful save
+        navigate('/slabs', { state: { preserveScroll: true } });
+      }
     } catch (error) {
       console.error('Error saving slabs:', error);
       if (error instanceof Error) {
@@ -397,23 +529,23 @@ const SlabEntry = () => {
   
   const generatePDF = async () => {
     try {
-      // First save to database
-      if (!dispatchInfo.materialName || !dispatchInfo.lotNumber || !dispatchInfo.dispatchVehicleNumber || 
-          !dispatchInfo.supervisorName || !dispatchInfo.partyName) {
-        alert('Please fill in all dispatch information fields');
-        return;
+      // Validate dispatch info
+      if (!dispatchInfo.materialName || !dispatchInfo.lotNumber || 
+          !dispatchInfo.supervisorName || !dispatchInfo.partyName || !dispatchInfo.thickness) {
+        alert('Please fill in all mandatory dispatch information fields');
+        return null;
       }
 
       // Filter valid slabs
       const validSlabs = slabs.filter(slab => 
-        slab.thickness > 0 && slab.length > 0 && slab.height > 0
+        slab.length > 0 && slab.height > 0
       );
 
       if (validSlabs.length === 0) {
         alert('Please enter measurements for at least one slab');
-        return;
+        return null;
       }
-      
+
       // Generate a single dispatchId for all slabs
       const dispatchId = `DISP-${Date.now()}-${dispatchInfo.lotNumber}`;
       const dispatchTimestamp = new Date();
@@ -427,11 +559,11 @@ const SlabEntry = () => {
           dispatchTimestamp,
           materialName: dispatchInfo.materialName,
           lotNumber: dispatchInfo.lotNumber,
-          dispatchVehicleNumber: dispatchInfo.dispatchVehicleNumber,
+          dispatchVehicleNumber: dispatchInfo.dispatchVehicleNumber || 'Not Specified',
           supervisorName: dispatchInfo.supervisorName,
           partyName: dispatchInfo.partyName,
           slabNumber: slab.slabNumber,
-          thickness: slab.thickness,
+          thickness: dispatchInfo.thickness,
           length: slab.length,
           height: slab.height,
           cornerDeductions: slab.cornerDeductions.map(({ length, height, area }) => ({
@@ -442,7 +574,8 @@ const SlabEntry = () => {
           measurementUnit: dispatchInfo.measurementUnit,
           grossArea: slab.grossArea,
           totalDeductionArea: slab.totalDeductionArea,
-          netArea: slab.netArea
+          netArea: slab.netArea,
+          remarks: slab.remarks
         };
         
         const savedSlab = await apiService.createSlab(slabData);
@@ -453,8 +586,8 @@ const SlabEntry = () => {
       const pdf = new jsPDF('landscape');
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-      const margin = 15; // Reduced margin for single page
-      let yPosition = 10; // Start closer to top
+      const margin = 15;
+      let yPosition = 10;
 
       const PRIMARY_COLOR: [number, number, number] = [41, 98, 255];
       const TEXT_COLOR_DARK = '#333333';
@@ -549,7 +682,7 @@ const SlabEntry = () => {
       pdf.text('VEHICLE NO.:', col2X, yPosition);
       pdf.setFont('helvetica', 'normal');
       pdf.text(dispatchInfo.materialName || 'N/A', col1X + 70, yPosition);
-      pdf.text(dispatchInfo.dispatchVehicleNumber || 'N/A', col2X + 70, yPosition);
+      pdf.text(dispatchInfo.dispatchVehicleNumber || 'Not Specified', col2X + 70, yPosition);
       addSpacing(1);
 
       // Lot Number and Supervisor
@@ -569,7 +702,7 @@ const SlabEntry = () => {
         slab.slabNumber.toString(),
         slab.length.toFixed(2),
         slab.height.toFixed(2),
-        slab.thickness.toFixed(2),
+        dispatchInfo.thickness.toFixed(2),
         slab.grossArea.toFixed(2),
         slab.cornerDeductions[0]?.area.toFixed(2) || '0.00',
         slab.cornerDeductions[1]?.area.toFixed(2) || '0.00',
@@ -700,16 +833,12 @@ const SlabEntry = () => {
       pdf.setFont('helvetica', 'bold');
       pdf.text('Authorized Signature', signatureX, notesY + 25);
 
-      // Save PDF with formatted filename
-      const fileName = `Dispatch_Note_${dispatchInfo.partyName || 'UnknownParty'}_${dispatchInfo.lotNumber || 'NoLot'}_${formattedDate.replace(/\//g, '-')}.pdf`;
-      pdf.save(fileName);
-
-      alert(`Successfully saved ${savedSlabs.length} slabs to database and generated PDF report!`);
-      // Navigate to slabs database page after successful save and PDF generation
-      navigate('/slabs', { state: { preserveScroll: true } });
+      // Return the PDF object instead of saving it directly
+      return pdf;
     } catch (error) {
-      console.error('Error saving slabs or generating PDF:', error);
-      alert('Error saving slabs or generating PDF. Please check the console for more details.');
+      console.error('Error generating PDF:', error);
+      alert('Error generating PDF. Please try again.');
+      return null;
     }
   };
 
@@ -758,7 +887,7 @@ const SlabEntry = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {/* Material Name with Add Option */}
             <div className="form-group">
-              <label className="form-label">Material Name</label>
+              <label className="form-label">Material Name *</label>
               <div className="flex space-x-2">
                 <select
                   value={dispatchInfo.materialName}
@@ -797,7 +926,7 @@ const SlabEntry = () => {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Lot Number (UID)</label>
+              <label className="form-label">Lot Number (UID) *</label>
               <input
                 type="text"
                 value={dispatchInfo.lotNumber}
@@ -808,7 +937,7 @@ const SlabEntry = () => {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Vehicle Number</label>
+              <label className="form-label">Vehicle Number *</label>
               <input
                 type="text"
                 value={dispatchInfo.dispatchVehicleNumber}
@@ -819,21 +948,19 @@ const SlabEntry = () => {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Supervisor Name</label>
-              <select
+              <label className="form-label">Supervisor Name *</label>
+              <input
+                type="text"
                 value={dispatchInfo.supervisorName}
                 onChange={(e) => handleDispatchInfoChange('supervisorName', e.target.value)}
-                className="input-field"
-              >
-                <option value="">Select Supervisor</option>
-                <option value="John Doe">John Doe</option>
-                <option value="Jane Smith">Jane Smith</option>
-                <option value="Ahmed Khan">Ahmed Khan</option>
-              </select>
+                className="input-field bg-gray-100"
+                placeholder="Auto-populated"
+                readOnly
+              />
             </div>
 
             <div className="form-group">
-              <label className="form-label">Party Name</label>
+              <label className="form-label">Party Name *</label>
               <div className="relative">
                 <input
                   ref={inputRef}
@@ -912,7 +1039,41 @@ const SlabEntry = () => {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Measurement Unit</label>
+              <label className="form-label">Thickness (mm) *</label>
+              <div className="relative">
+                <input
+                  type="number"
+                  value={dispatchInfo.thickness}
+                  onChange={(e) => {
+                    handleDispatchInfoChange('thickness', parseInt(e.target.value));
+                    setShowThicknessSuggestions(true);
+                  }}
+                  onFocus={() => setShowThicknessSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowThicknessSuggestions(false), 150)}
+                  className="input-field"
+                  placeholder="Enter thickness"
+                />
+                {showThicknessSuggestions && (
+                  <ul className="absolute z-10 left-0 right-0 bg-white border border-gray-200 rounded shadow mt-1 max-h-52 overflow-y-auto">
+                    {thicknessOptions.map(option => (
+                      <li
+                        key={option}
+                        className="px-4 py-2 hover:bg-primary-100 cursor-pointer"
+                        onMouseDown={() => {
+                          handleDispatchInfoChange('thickness', option);
+                          setShowThicknessSuggestions(false);
+                        }}
+                      >
+                        {option} mm
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Measurement Unit *</label>
               <select
                 value={dispatchInfo.measurementUnit}
                 onChange={(e) => handleDispatchInfoChange('measurementUnit', e.target.value as MeasurementUnit)}
@@ -931,7 +1092,20 @@ const SlabEntry = () => {
           {slabs.map((slab, slabIndex) => (
             <div key={slab.id} className="card">
               <div className="flex items-center justify-between mb-4">
-                <h4 className="text-lg font-semibold">Slab #{slab.slabNumber}</h4>
+                <div className="flex items-center space-x-2">
+                  <h4 className="text-lg font-semibold">Slab #</h4>
+                  <input
+                    type="text"
+                    value={slab.slabNumber}
+                    onChange={(e) => handleSlabNumberChange(slabIndex, e.target.value)}
+                    onBlur={(e) => validateSlabNumber(slabIndex, parseInt(e.target.value) || 0)}
+                    className="input-field w-20"
+                    min="1"
+                  />
+                  {errors[`slab-${slabIndex}-number`] && (
+                    <span className="text-red-500 text-sm">{errors[`slab-${slabIndex}-number`]}</span>
+                  )}
+                </div>
                 <div className="flex space-x-2 items-center">
                   {slabIndex > 0 && (
                     <button
@@ -972,12 +1146,12 @@ const SlabEntry = () => {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Basic Measurements - Rearranged to L-H-T order */}
+                {/* Basic Measurements */}
                 <div className="space-y-4">
-                  <h5 className="font-medium text-gray-700">Basic Measurements (L × H × T)</h5>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <h5 className="font-medium text-gray-700">Basic Measurements (L × H)</h5>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="form-label text-xs">Length ({dispatchInfo.measurementUnit})</label>
+                      <label className="form-label text-xs">Length ({dispatchInfo.measurementUnit}) *</label>
                       <input
                         type="number"
                         step="0.01"
@@ -988,7 +1162,7 @@ const SlabEntry = () => {
                       />
                     </div>
                     <div>
-                      <label className="form-label text-xs">Height ({dispatchInfo.measurementUnit})</label>
+                      <label className="form-label text-xs">Height ({dispatchInfo.measurementUnit}) *</label>
                       <input
                         type="number"
                         step="0.01"
@@ -998,21 +1172,10 @@ const SlabEntry = () => {
                         placeholder="0.00"
                       />
                     </div>
-                    <div>
-                      <label className="form-label text-xs">Thickness ({dispatchInfo.measurementUnit})</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={slab.thickness === 0 ? '' : slab.thickness}
-                        onChange={(e) => handleSlabChange(slabIndex, 'thickness', parseFloat(e.target.value) || 0)}
-                        className="input-field text-sm w-full py-2 md:py-1"
-                        placeholder="0.00"
-                      />
-                    </div>
                   </div>
                 </div>
 
-                {/* Corner Deductions - Single Row */}
+                {/* Corner Deductions */}
                 <div className="space-y-4">
                   <h5 className="font-medium text-gray-700">Corner Deductions</h5>
                   <div className="flex flex-col space-y-2 sm:grid sm:grid-cols-4 sm:gap-2">
@@ -1071,6 +1234,21 @@ const SlabEntry = () => {
                   <div className="font-semibold text-green-600">{slab.netArea.toFixed(2)} ft²</div>
                 </div>
               </div>
+
+              {/* Remarks - Moved to bottom */}
+              <div className="mt-4 border-t pt-4">
+                <h5 className="font-medium text-gray-700 mb-2">Remarks (Optional)</h5>
+                <select
+                  value={slab.remarks || ''}
+                  onChange={(e) => handleSlabChange(slabIndex, 'remarks', e.target.value)}
+                  className="input-field w-full"
+                >
+                  <option value="">Select remarks</option>
+                  {remarksOptions.map((option, index) => (
+                    <option key={index} value={option}>{option}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           ))}
         </div>
@@ -1097,20 +1275,16 @@ const SlabEntry = () => {
           <div className="flex flex-col sm:flex-row justify-center space-y-3 sm:space-y-0 sm:space-x-4">
             <button 
               type="submit" 
-              className="btn-primary text-lg px-8 py-3 min-w-48 w-full sm:w-auto"
+              className="bg-green-600 text-white font-medium text-lg px-8 py-3 rounded-lg hover:bg-green-700 min-w-48 w-full sm:w-auto flex items-center justify-center space-x-2"
             >
-              💾 Save to Database
-            </button>
-            <button 
-              type="button"
-              onClick={generatePDF}
-              className="bg-green-600 text-white font-medium text-lg px-8 py-3 rounded-lg cursor-pointer hover:bg-green-700 min-w-48 w-full sm:w-auto"
-            >
-              📄 Download PDF Report
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+              </svg>
+              <span>Generate Report</span>
             </button>
           </div>
           <div className="text-sm text-gray-600 max-w-md mx-auto">
-            Save all {slabs.length} slab measurements to the cloud database and download a comprehensive PDF report
+            Save all {slabs.length} slab measurements and generate a comprehensive report
           </div>
         </div>
       </form>
