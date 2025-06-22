@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const Party = require('../models/Party');
+const { authMiddleware } = require('./authRoutes');
+
+// Protect all routes
+router.use(authMiddleware);
 
 // GET /api/parties - List all parties (for autocomplete)
 router.get('/', async(req, res) => {

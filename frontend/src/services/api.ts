@@ -21,12 +21,14 @@ class ApiService {
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    // TEMPORARILY BYPASS TOKEN REQUIREMENT FOR DEVELOPMENT
     const token = this.getToken();
-    
+    if (!token) {
+      throw new Error('No authentication token found. Please log in.');
+    }
+
     const headers = {
       'Content-Type': 'application/json',
-      ...(token && { 'Authorization': `Bearer ${token}` }),
+      'Authorization': `Bearer ${token}`,
       ...options.headers,
     };
 

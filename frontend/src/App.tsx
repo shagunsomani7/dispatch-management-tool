@@ -85,11 +85,6 @@ function RequireAuth({ children, requireAdmin = false }: { children: ReactNode; 
   const { user, loading } = useAuth();
   const location = useLocation();
 
-  // TEMPORARILY BYPASS AUTHENTICATION FOR DEVELOPMENT
-  return <>{children}</>;
-
-  // Original authentication logic commented out for development
-  /*
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -108,7 +103,6 @@ function RequireAuth({ children, requireAdmin = false }: { children: ReactNode; 
   }
 
   return <>{children}</>;
-  */
 }
 
 function App() {

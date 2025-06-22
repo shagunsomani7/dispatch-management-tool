@@ -3,8 +3,8 @@ const router = express.Router();
 const Material = require('../models/Material');
 const { authMiddleware } = require('./authRoutes');
 
-// Protect all routes - TEMPORARILY DISABLED FOR DEVELOPMENT
-// router.use(authMiddleware);
+// Protect all routes
+router.use(authMiddleware);
 
 // GET /api/materials - Get all materials with optional search
 router.get('/', async(req, res) => {
