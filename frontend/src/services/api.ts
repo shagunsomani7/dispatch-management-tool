@@ -21,14 +21,12 @@ class ApiService {
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    // TEMPORARILY BYPASS TOKEN REQUIREMENT FOR DEVELOPMENT
     const token = this.getToken();
-    if (!token) {
-      throw new Error('No authentication token found. Please log in.');
-    }
-
+    
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
+      ...(token && { 'Authorization': `Bearer ${token}` }),
       ...options.headers,
     };
 
@@ -174,6 +172,18 @@ class ApiService {
     return this.request<SlabMeasurement>(`/slabs/last-slab/${lotNumber}`);
   }
 
+  async getNextDispatchCode(year: number, month: number): Promise<{
+    nextDispatchCode: number;
+    nextLotNumber: string;
+    monthPrefix: string;
+  }> {
+    return this.request<{
+      nextDispatchCode: number;
+      nextLotNumber: string;
+      monthPrefix: string;
+    }>(`/slabs/next-dispatch-code/${year}/${month}`);
+  }
+
   // Reports API
   async getAnalytics(filters?: ReportFilters): Promise<{
     summary: {
@@ -305,6 +315,22 @@ class ApiService {
 
   async createParty(name: string): Promise<{ _id: string; name: string }> {
     return this.request<{ _id: string; name: string }>(`/parties`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  // Materials API
+  async getMaterials(q?: string): Promise<{ _id: string; name: string }[]> {
+    const queryParams = new URLSearchParams();
+    if (q) {
+      queryParams.append('q', q);
+    }
+    return this.request<{ _id: string; name: string }[]>(`/materials?${queryParams.toString()}`);
+  }
+
+  async createMaterial(name: string): Promise<{ _id: string; name: string }> {
+    return this.request<{ _id: string; name: string }>(`/materials`, {
       method: 'POST',
       body: JSON.stringify({ name }),
     });

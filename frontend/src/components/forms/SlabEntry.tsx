@@ -103,6 +103,41 @@ const SlabEntry = () => {
     return () => { active = false; };
   }, [partyQuery]);
 
+  // Load materials and generate automatic lot number on component mount
+  useEffect(() => {
+    const loadInitialData = async () => {
+      try {
+        // Load materials from database
+        const materialsData = await apiService.getMaterials();
+        setMaterials(materialsData.map((m: { name: string }) => m.name));
+        
+        // Generate automatic lot number with format YYYYMM-DispatchCode
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth() + 1;
+        
+        const dispatchData = await apiService.getNextDispatchCode(year, month);
+        setDispatchInfo(prev => ({
+          ...prev,
+          lotNumber: dispatchData.nextLotNumber
+        }));
+      } catch (error) {
+        console.error('Error loading initial data:', error);
+        // Fallback to default materials if API fails
+        setMaterials([
+          'Granite Red',
+          'Granite Black', 
+          'Marble White',
+          'Marble Black',
+          'Quartz Premium'
+        ]);
+        // Don't set lot number if API fails - user can manually enter
+      }
+    };
+    
+    loadInitialData();
+  }, []);
+
   const handleDispatchInfoChange = (field: string, value: any) => {
     setDispatchInfo(prev => ({
       ...prev,
@@ -110,12 +145,22 @@ const SlabEntry = () => {
     }));
   };
 
-  const addNewMaterial = () => {
+  const addNewMaterial = async () => {
     if (newMaterial.trim() && !materials.includes(newMaterial.trim())) {
-      setMaterials(prev => [...prev, newMaterial.trim()]);
-      setDispatchInfo(prev => ({ ...prev, materialName: newMaterial.trim() }));
-      setNewMaterial('');
-      setShowAddMaterial(false);
+      try {
+        await apiService.createMaterial(newMaterial.trim());
+        setMaterials(prev => [...prev, newMaterial.trim()]);
+        setDispatchInfo(prev => ({ ...prev, materialName: newMaterial.trim() }));
+        setNewMaterial('');
+        setShowAddMaterial(false);
+      } catch (error) {
+        console.error('Error adding material:', error);
+        // Still add locally if API fails
+        setMaterials(prev => [...prev, newMaterial.trim()]);
+        setDispatchInfo(prev => ({ ...prev, materialName: newMaterial.trim() }));
+        setNewMaterial('');
+        setShowAddMaterial(false);
+      }
     }
   };
 
@@ -352,6 +397,22 @@ const SlabEntry = () => {
     return true;
   };
 
+  const generateNewLotNumber = async () => {
+    try {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
+      
+      const dispatchData = await apiService.getNextDispatchCode(year, month);
+      setDispatchInfo(prev => ({
+        ...prev,
+        lotNumber: dispatchData.nextLotNumber
+      }));
+    } catch (error) {
+      console.error('Error generating new lot number:', error);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -513,6 +574,25 @@ const SlabEntry = () => {
         // Navigate to slabs database page after successful save
         navigate('/slabs', { state: { preserveScroll: true } });
       }
+
+      // Generate new lot number for next dispatch
+      await generateNewLotNumber();
+      
+      // Reset slabs to initial state for next entry
+      setSlabs(Array.from({ length: 5 }, (_, index) => ({
+        id: `slab-${index + 1}`,
+        slabNumber: index + 1,
+        length: 0,
+        height: 0,
+        cornerDeductions: [
+          { id: '1', length: 0, height: 0, area: 0 }
+        ],
+        grossArea: 0,
+        totalDeductionArea: 0,
+        netArea: 0,
+        remarks: ''
+      })));
+
     } catch (error) {
       console.error('Error saving slabs:', error);
       if (error instanceof Error) {
@@ -546,43 +626,7 @@ const SlabEntry = () => {
         return null;
       }
 
-      // Generate a single dispatchId for all slabs
-      const dispatchId = `DISP-${Date.now()}-${dispatchInfo.lotNumber}`;
-      const dispatchTimestamp = new Date();
-      
-      // Save each slab
-      const savedSlabs = [];
-      for (let i = 0; i < validSlabs.length; i++) {
-        const slab = validSlabs[i];
-        const slabData = {
-          dispatchId,
-          dispatchTimestamp,
-          materialName: dispatchInfo.materialName,
-          lotNumber: dispatchInfo.lotNumber,
-          dispatchVehicleNumber: dispatchInfo.dispatchVehicleNumber || 'Not Specified',
-          supervisorName: dispatchInfo.supervisorName,
-          partyName: dispatchInfo.partyName,
-          slabNumber: slab.slabNumber,
-          thickness: dispatchInfo.thickness,
-          length: slab.length,
-          height: slab.height,
-          cornerDeductions: slab.cornerDeductions.map(({ length, height, area }) => ({
-            length,
-            height,
-            area
-          })),
-          measurementUnit: dispatchInfo.measurementUnit,
-          grossArea: slab.grossArea,
-          totalDeductionArea: slab.totalDeductionArea,
-          netArea: slab.netArea,
-          remarks: slab.remarks
-        };
-        
-        const savedSlab = await apiService.createSlab(slabData);
-        savedSlabs.push(savedSlab);
-      }
-
-      // After successful save, generate PDF
+      // Generate PDF without saving (slabs already saved in handleSubmit)
       const pdf = new jsPDF('landscape');
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
@@ -868,9 +912,6 @@ const SlabEntry = () => {
           <button onClick={clearAllSlabs} className="bg-red-600 text-white font-medium py-2 px-4 rounded-lg cursor-pointer hover:bg-red-700">
             Clear All
           </button>
-          <button onClick={addNewSlab} className="btn-secondary">
-            Add New Slab
-          </button>
           <button type="submit" form="dispatch-form" className="btn-primary">
             Save All Measurements
           </button>
@@ -927,13 +968,26 @@ const SlabEntry = () => {
 
             <div className="form-group">
               <label className="form-label">Lot Number (UID) *</label>
-              <input
-                type="text"
-                value={dispatchInfo.lotNumber}
-                onChange={(e) => handleDispatchInfoChange('lotNumber', e.target.value)}
-                className="input-field"
-                placeholder="Enter lot number"
-              />
+              <div className="flex space-x-2">
+                <input
+                  type="text"
+                  value={dispatchInfo.lotNumber}
+                  className="input-field bg-gray-100 flex-1"
+                  placeholder="Auto-generated (YYYYMM-DispatchCode)"
+                  readOnly
+                />
+                <button
+                  type="button"
+                  onClick={generateNewLotNumber}
+                  className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-1"
+                  title="Generate new lot number"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span>Refresh</span>
+                </button>
+              </div>
             </div>
 
             <div className="form-group">
@@ -1091,57 +1145,35 @@ const SlabEntry = () => {
         <div className="space-y-4">
           {slabs.map((slab, slabIndex) => (
             <div key={slab.id} className="card">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-2">
-                  <h4 className="text-lg font-semibold">Slab #</h4>
+              <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <label htmlFor={`slab-number-${slabIndex}`} className="text-base font-semibold text-gray-700">Slab #</label>
                   <input
+                      id={`slab-number-${slabIndex}`}
                     type="text"
                     value={slab.slabNumber}
                     onChange={(e) => handleSlabNumberChange(slabIndex, e.target.value)}
                     onBlur={(e) => validateSlabNumber(slabIndex, parseInt(e.target.value) || 0)}
-                    className="input-field w-20"
-                    min="1"
+                      className="input-field w-14 py-1 text-center"
                   />
                   {errors[`slab-${slabIndex}-number`] && (
                     <span className="text-red-500 text-sm">{errors[`slab-${slabIndex}-number`]}</span>
                   )}
                 </div>
-                <div className="flex space-x-2 items-center">
-                  {slabIndex > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => copyPreviousSlab(slabIndex)}
-                      className="btn-secondary text-sm"
-                    >
-                      Copy Previous
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => clearSlab(slabIndex)}
-                    className="bg-orange-600 text-white font-medium py-1 px-3 rounded-lg cursor-pointer hover:bg-orange-700 text-sm"
-                  >
-                    Clear
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => fillDefaultSlab(slabIndex)}
-                    className="bg-gray-500 text-white font-medium py-1 px-3 rounded-lg cursor-pointer hover:bg-gray-700 text-sm"
-                  >
-                    Fill Default
-                  </button>
-                  {slabs.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeSlab(slabIndex)}
-                      className="bg-red-600 text-white font-medium py-1 px-3 rounded-lg cursor-pointer hover:bg-red-700 text-sm"
-                    >
-                      Remove
-                    </button>
-                  )}
-                  <div className="text-sm text-gray-600">
-                    Net Area: {slab.netArea.toFixed(2)} ft²
+                  <div className="text-sm font-semibold text-gray-800">
+                    Net Area: <span className="text-blue-600">{slab.netArea.toFixed(2)} ft²</span>
                   </div>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  {slabIndex > 0 && (
+                    <button type="button" onClick={() => copyPreviousSlab(slabIndex)} className="px-3 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 whitespace-nowrap">Copy Previous</button>
+                  )}
+                  <button type="button" onClick={() => clearSlab(slabIndex)} className="px-3 py-2 text-sm font-medium text-white bg-orange-500 rounded-md hover:bg-orange-600 whitespace-nowrap">Clear</button>
+                  <button type="button" onClick={() => fillDefaultSlab(slabIndex)} className="px-3 py-2 text-sm font-medium text-white bg-slate-500 rounded-md hover:bg-slate-600 whitespace-nowrap">Fill Default</button>
+                  {slabs.length > 1 && (
+                    <button type="button" onClick={() => removeSlab(slabIndex)} className="px-3 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 whitespace-nowrap">Remove</button>
+                  )}
                 </div>
               </div>
 
@@ -1248,6 +1280,20 @@ const SlabEntry = () => {
                     <option key={index} value={option}>{option}</option>
                   ))}
                 </select>
+              </div>
+
+              {/* Add New Slab Button */}
+              <div className="mt-4 border-t pt-4">
+                <button
+                  type="button"
+                  onClick={addNewSlab}
+                  className="w-full sm:w-auto bg-blue-600 text-white font-medium py-2 px-4 rounded-lg hover:bg-blue-700 flex items-center justify-center space-x-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  <span>Add New Slab</span>
+                </button>
               </div>
             </div>
           ))}

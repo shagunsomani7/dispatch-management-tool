@@ -11,6 +11,7 @@ const slabRoutes = require('./src/routes/slabRoutes');
 const reportRoutes = require('./src/routes/reportRoutes');
 const authRoutes = require('./src/routes/authRoutes');
 const partyRoutes = require('./src/routes/partyRoutes');
+const materialRoutes = require('./src/routes/materialRoutes');
 
 // Load environment variables
 dotenv.config();
@@ -38,6 +39,7 @@ app.use('/api/slabs', slabRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/parties', partyRoutes);
+app.use('/api/materials', materialRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
