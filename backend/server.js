@@ -105,12 +105,14 @@ const startServer = async() => {
     // Try to connect to database but don't fail if it's not available
     await connectDB();
 
-    app.listen(PORT, () => {
+    app.listen(PORT, '0.0.0.0', () => {
         console.log('\n🚀 Server Status:');
         console.log(`   Port: ${PORT}`);
         console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
-        console.log(`   API URL: http://localhost:${PORT}/api`);
+        console.log(`   Local API URL: http://localhost:${PORT}/api`);
+        console.log(`   Network API URL: http://192.168.29.193:${PORT}/api`);
         console.log(`   Health Check: http://localhost:${PORT}/api/health`);
+        console.log(`   Network Health Check: http://192.168.29.193:${PORT}/api/health`);
         console.log(`   Database: ${mongoose.connection.readyState === 1 ? '✅ Connected' : '⚠️  Disconnected'}`);
 
         if (mongoose.connection.readyState !== 1) {

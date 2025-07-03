@@ -46,9 +46,10 @@ const slabMeasurementSchema = new mongoose.Schema({
     },
     dispatchVehicleNumber: {
         type: String,
-        required: true,
+        required: false,
         trim: true,
-        index: true
+        index: true,
+        default: ''
     },
     supervisorName: {
         type: String,

@@ -63,7 +63,7 @@ router.post('/', async(req, res) => {
         // Validate required fields
         const requiredFields = [
             'dispatchId', 'dispatchTimestamp',
-            'materialName', 'lotNumber', 'dispatchVehicleNumber',
+            'materialName', 'lotNumber',
             'supervisorName', 'partyName', 'slabNumber',
             'thickness', 'length', 'height', 'measurementUnit'
         ];
@@ -74,6 +74,11 @@ router.post('/', async(req, res) => {
                     message: `Missing required field: ${field}`
                 });
             }
+        }
+
+        // Vehicle number is optional, but set to empty string if not provided
+        if (!slabData.dispatchVehicleNumber) {
+            slabData.dispatchVehicleNumber = '';
         }
 
         const slab = new SlabMeasurement(slabData);
@@ -206,41 +211,43 @@ router.get('/last-slab/:lotNumber', async(req, res) => {
     }
 });
 
-// GET /api/slabs/next-dispatch-code/:year/:month - Get next dispatch code for a month
+// GET /api/slabs/next-dispatch-code/:year/:month - Generate next dispatch code for lot number
 router.get('/next-dispatch-code/:year/:month', async(req, res) => {
     try {
         const { year, month } = req.params;
 
         // Validate year and month
-        if (!year || !month || isNaN(year) || isNaN(month) || month < 1 || month > 12) {
-            return res.status(400).json({
-                message: 'Invalid year or month. Please provide valid numeric values.'
-            });
+        const yearNum = parseInt(year);
+        const monthNum = parseInt(month);
+
+        if (isNaN(yearNum) || isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
+            return res.status(400).json({ message: 'Invalid year or month provided' });
         }
 
-        // Create regex pattern for lot numbers in this month (YYYYMM-*)
-        const monthPrefix = `${year}${month.toString().padStart(2, '0')}-`;
-        const lotPattern = new RegExp(`^${monthPrefix}(\\d+)$`);
+        // Create month prefix (YYYYMM format)
+        const monthPrefix = `${yearNum}${monthNum.toString().padStart(2, '0')}`;
 
-        // Find all slabs with lot numbers matching this month pattern
-        const slabs = await SlabMeasurement.find({
-            lotNumber: { $regex: lotPattern }
-        }).distinct('lotNumber');
+        // Find the latest lot number for this month
+        const latestSlab = await SlabMeasurement.findOne({
+            lotNumber: { $regex: `^${monthPrefix}-`, $options: 'i' }
+        }).sort({ createdAt: -1 });
 
-        // Extract dispatch codes and find the highest one
-        let maxDispatchCode = 0;
-        slabs.forEach(lotNumber => {
-            const match = lotNumber.match(lotPattern);
-            if (match && match[1]) {
-                const dispatchCode = parseInt(match[1]);
-                if (dispatchCode > maxDispatchCode) {
-                    maxDispatchCode = dispatchCode;
+        let nextDispatchCode = 1;
+
+        if (latestSlab && latestSlab.lotNumber) {
+            // Extract the dispatch code from the lot number (format: YYYYMM-XXX)
+            const lotParts = latestSlab.lotNumber.split('-');
+            if (lotParts.length >= 2) {
+                const lastCode = parseInt(lotParts[1]);
+                if (!isNaN(lastCode)) {
+                    nextDispatchCode = lastCode + 1;
                 }
             }
-        });
+        }
 
-        const nextDispatchCode = maxDispatchCode + 1;
-        const nextLotNumber = `${monthPrefix}${nextDispatchCode.toString().padStart(3, '0')}`;
+        // Format the dispatch code with leading zeros (3 digits)
+        const formattedCode = nextDispatchCode.toString().padStart(3, '0');
+        const nextLotNumber = `${monthPrefix}-${formattedCode}`;
 
         res.json({
             nextDispatchCode,
@@ -249,7 +256,7 @@ router.get('/next-dispatch-code/:year/:month', async(req, res) => {
         });
     } catch (error) {
         res.status(500).json({
-            message: 'Error getting next dispatch code',
+            message: 'Error generating next dispatch code',
             error: error.message
         });
     }

@@ -34,8 +34,22 @@ interface DailyReportData {
     totalArea: number;
     parties: number;
     supervisors: number;
+    totalDispatches: number;
   };
   slabs: SlabMeasurement[];
+  dispatches: DispatchSummary[];
+}
+
+interface DispatchSummary {
+  dispatchId: string;
+  dispatchTime: string;
+  lotNumber: string;
+  partyName: string;
+  vehicleNumber: string;
+  supervisorName: string;
+  slabCount: number;
+  totalArea: number;
+  materialBreakdown: { [material: string]: { count: number; area: number } };
 }
 
 const Reports = () => {
@@ -97,13 +111,85 @@ const Reports = () => {
     }));
   };
 
+  // Function to group slabs by dispatch and create dispatch summaries
+  const groupSlabsByDispatch = (slabs: SlabMeasurement[]): DispatchSummary[] => {
+    const dispatchGroups: { [key: string]: SlabMeasurement[] } = {};
+    
+    // Group slabs by dispatchId
+    slabs.forEach(slab => {
+      const dispatchKey = slab.dispatchId || `${slab.lotNumber}-${slab.partyName}`;
+      if (!dispatchGroups[dispatchKey]) {
+        dispatchGroups[dispatchKey] = [];
+      }
+      dispatchGroups[dispatchKey].push(slab);
+    });
+
+    // Create dispatch summaries
+    const dispatches: DispatchSummary[] = Object.entries(dispatchGroups).map(([dispatchKey, slabGroup]) => {
+      const firstSlab = slabGroup[0];
+      const materialBreakdown: { [material: string]: { count: number; area: number } } = {};
+      
+      // Calculate material breakdown for this dispatch
+      slabGroup.forEach(slab => {
+        if (!materialBreakdown[slab.materialName]) {
+          materialBreakdown[slab.materialName] = { count: 0, area: 0 };
+        }
+        materialBreakdown[slab.materialName].count++;
+        materialBreakdown[slab.materialName].area += slab.netArea;
+      });
+
+      return {
+        dispatchId: firstSlab.dispatchId || dispatchKey,
+        dispatchTime: firstSlab.dispatchTimestamp 
+          ? new Date(firstSlab.dispatchTimestamp).toLocaleTimeString('en-IN', { 
+              hour: '2-digit', 
+              minute: '2-digit',
+              hour12: true 
+            })
+          : new Date(firstSlab.timestamp).toLocaleTimeString('en-IN', { 
+              hour: '2-digit', 
+              minute: '2-digit',
+              hour12: true 
+            }),
+        lotNumber: firstSlab.lotNumber,
+        partyName: firstSlab.partyName,
+        vehicleNumber: firstSlab.dispatchVehicleNumber || 'Not specified',
+        supervisorName: firstSlab.supervisorName,
+        slabCount: slabGroup.length,
+        totalArea: slabGroup.reduce((sum, slab) => sum + slab.netArea, 0),
+        materialBreakdown
+      };
+    });
+
+    // Sort by dispatch time in descending order (newest first)
+    return dispatches.sort((a, b) => {
+      const timeA = a.dispatchTime;
+      const timeB = b.dispatchTime;
+      return timeB.localeCompare(timeA);
+    });
+  };
+
   const generateReport = async () => {
     setLoading(true);
     try {
       if (selectedReport === 'daily') {
         const today = new Date().toISOString().split('T')[0];
         const data = await apiService.getDailyReport(today);
-        setDailyReportData(data);
+        
+        // Process slabs into dispatch summaries
+        const dispatches = groupSlabsByDispatch(data.slabs);
+        
+        // Update summary to include dispatch count
+        const enhancedData = {
+          ...data,
+          summary: {
+            ...data.summary,
+            totalDispatches: dispatches.length
+          },
+          dispatches
+        };
+        
+        setDailyReportData(enhancedData);
         setReportData(null); // Clear analytics data when switching to daily
       } else {
         // Prepare filters based on report type
@@ -191,6 +277,8 @@ const Reports = () => {
       pdf.setFont('helvetica', 'normal');
       pdf.text(`Date: ${dailyReportData.summary.date}`, 20, yPosition);
       yPosition += 8;
+      pdf.text(`Total Dispatches: ${dailyReportData.summary.totalDispatches}`, 20, yPosition);
+      yPosition += 8;
       pdf.text(`Total Slabs: ${dailyReportData.summary.totalSlabs}`, 20, yPosition);
       yPosition += 8;
       pdf.text(`Total Area: ${dailyReportData.summary.totalArea.toFixed(2)} sq ft`, 20, yPosition);
@@ -200,22 +288,33 @@ const Reports = () => {
       pdf.text(`Supervisors: ${dailyReportData.summary.supervisors}`, 20, yPosition);
       yPosition += 20;
 
-      // Table of slabs
-      if (dailyReportData.slabs.length > 0) {
-        const tableData = dailyReportData.slabs.map(slab => [
-          slab.slabNumber.toString(),
-          slab.partyName,
-          slab.materialName,
-          slab.netArea.toFixed(2),
-          slab.supervisorName
+      // Table of dispatches
+      if (dailyReportData.dispatches && dailyReportData.dispatches.length > 0) {
+        const tableData = dailyReportData.dispatches.map(dispatch => [
+          dispatch.dispatchTime,
+          dispatch.lotNumber,
+          dispatch.partyName,
+          dispatch.vehicleNumber,
+          dispatch.slabCount.toString(),
+          dispatch.totalArea.toFixed(2),
+          Object.keys(dispatch.materialBreakdown).join(', ')
         ]);
 
         autoTable(pdf, {
           startY: yPosition,
-          head: [['Slab #', 'Party', 'Material', 'Area (sq ft)', 'Supervisor']],
+          head: [['Time', 'Lot #', 'Party', 'Vehicle', 'Slabs', 'Area (sq ft)', 'Materials']],
           body: tableData,
-          styles: { fontSize: 10 },
-          headStyles: { fillColor: [66, 139, 202] }
+          styles: { fontSize: 9 },
+          headStyles: { fillColor: [66, 139, 202] },
+          columnStyles: {
+            0: { cellWidth: 20 },
+            1: { cellWidth: 25 },
+            2: { cellWidth: 30 },
+            3: { cellWidth: 25 },
+            4: { cellWidth: 15 },
+            5: { cellWidth: 25 },
+            6: { cellWidth: 40 }
+          }
         });
       }
     } else if (reportData) {
@@ -449,7 +548,7 @@ const Reports = () => {
               <div className="text-sm text-blue-600 font-medium">Total Dispatches</div>
               <div className="text-2xl font-bold text-blue-700">
                 {selectedReport === 'daily' 
-                  ? dailyReportData?.summary.totalSlabs || 0
+                  ? dailyReportData?.summary.totalDispatches || 0
                   : reportData?.summary.totalSlabs || 0
                 }
               </div>
@@ -507,16 +606,25 @@ const Reports = () => {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Slab #
+                  Dispatch Time
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Lot Number
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Party Name
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Material
+                  Vehicle Number
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Net Area
+                  Slabs Count
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Total Area
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Materials
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Supervisor
@@ -524,22 +632,37 @@ const Reports = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-                {dailyReportData.slabs.map((slab, index) => (
-                  <tr key={index}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {slab.slabNumber}
+                {dailyReportData.dispatches && dailyReportData.dispatches.map((dispatch, index) => (
+                  <tr key={index} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {dispatch.dispatchTime}
                     </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {slab.partyName}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {slab.materialName}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {slab.netArea.toFixed(2)} sq ft
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {slab.supervisorName}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {dispatch.lotNumber}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {dispatch.partyName}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {dispatch.vehicleNumber}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-900 font-semibold">
+                      {dispatch.slabCount}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">
+                      {dispatch.totalArea.toFixed(2)} sq ft
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900">
+                      <div className="flex flex-wrap gap-1">
+                        {Object.entries(dispatch.materialBreakdown).map(([material, data]) => (
+                          <span key={material} className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
+                            {material} ({data.count})
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {dispatch.supervisorName}
                     </td>
                   </tr>
                 ))}

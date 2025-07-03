@@ -7,13 +7,37 @@ declare const process: {
   };
 };
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+// Auto-detect the best API URL based on the current host
+const getApiBaseUrl = (): string => {
+  // If environment variable is set, use it
+  if (process.env.REACT_APP_API_URL) {
+    return process.env.REACT_APP_API_URL;
+  }
+  
+  // Auto-detect based on current hostname
+  const hostname = window.location.hostname;
+  
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    // Running on computer - use localhost
+    return 'http://localhost:5000/api';
+  } else if (hostname.startsWith('192.168.') || hostname.startsWith('10.') || hostname.startsWith('172.')) {
+    // Running on local network (mobile/tablet) - use the same host but port 5000
+    return `http://${hostname.replace(':3000', '')}:5000/api`;
+  } else {
+    // Fallback to localhost
+    return 'http://localhost:5000/api';
+  }
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 class ApiService {
   private baseUrl: string;
 
   constructor() {
     this.baseUrl = API_BASE_URL;
+    console.log('🌐 API Service initialized with URL:', this.baseUrl);
+    console.log('📱 Current hostname:', window.location.hostname);
   }
 
   getToken(): string | null {
