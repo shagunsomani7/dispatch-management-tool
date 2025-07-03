@@ -3,6 +3,9 @@
     "version": "0.1.0",
     "description": "Backend API for Dispatch Measurement ERP Module",
     "main": "server.js",
+    "engines": {
+        "node": ">=16.0.0"
+    },
     "scripts": {
         "start": "node server.js",
         "dev": "nodemon server.js",
@@ -21,7 +24,6 @@
         "morgan": "^1.10.0",
         "multer": "^1.4.5-lts.1",
         "nodemailer": "^6.9.3",
-        "puppeteer": "^20.7.0",
         "validator": "^13.9.0"
     },
     "devDependencies": {
