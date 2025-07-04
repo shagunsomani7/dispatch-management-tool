@@ -1,9 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const SlabMeasurement = require('../models/SlabMeasurement');
+const { authMiddleware, requireRole } = require('./authRoutes');
+
+// Protect all routes
+router.use(authMiddleware);
 
 // GET /api/reports/analytics - Get analytics data
-router.get('/analytics', async(req, res) => {
+router.get('/analytics', requireRole('admin'), async(req, res) => {
     try {
         const { startDate, endDate, groupBy = 'daily' } = req.query;
 
@@ -82,7 +86,7 @@ router.get('/analytics', async(req, res) => {
 });
 
 // GET /api/reports/daily - Get daily report
-router.get('/daily', async(req, res) => {
+router.get('/daily', requireRole('admin'), async(req, res) => {
     try {
         const { date = new Date().toISOString().split('T')[0] } = req.query;
 

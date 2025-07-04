@@ -10,6 +10,8 @@ const mongoose = require('mongoose');
 const slabRoutes = require('./src/routes/slabRoutes');
 const reportRoutes = require('./src/routes/reportRoutes');
 const authRoutes = require('./src/routes/authRoutes');
+const partyRoutes = require('./src/routes/partyRoutes');
+const materialRoutes = require('./src/routes/materialRoutes');
 
 // Load environment variables
 dotenv.config();
@@ -22,7 +24,11 @@ app.use(helmet());
 app.use(compression());
 app.use(morgan('combined'));
 app.use(cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: [
+        'http://localhost:3000',
+        'http://192.168.29.193:3000',
+        'https://dispatch-management-tool-frontend.onrender.com'
+    ],
     credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));
@@ -32,6 +38,8 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/api/slabs', slabRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/parties', partyRoutes);
+app.use('/api/materials', materialRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -97,12 +105,14 @@ const startServer = async() => {
     // Try to connect to database but don't fail if it's not available
     await connectDB();
 
-    app.listen(PORT, () => {
+    app.listen(PORT, '0.0.0.0', () => {
         console.log('\n🚀 Server Status:');
         console.log(`   Port: ${PORT}`);
         console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
-        console.log(`   API URL: http://localhost:${PORT}/api`);
+        console.log(`   Local API URL: http://localhost:${PORT}/api`);
+        console.log(`   Network API URL: http://192.168.29.193:${PORT}/api`);
         console.log(`   Health Check: http://localhost:${PORT}/api/health`);
+        console.log(`   Network Health Check: http://192.168.29.193:${PORT}/api/health`);
         console.log(`   Database: ${mongoose.connection.readyState === 1 ? '✅ Connected' : '⚠️  Disconnected'}`);
 
         if (mongoose.connection.readyState !== 1) {

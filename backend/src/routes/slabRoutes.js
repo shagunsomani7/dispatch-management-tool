@@ -1,9 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const SlabMeasurement = require('../models/SlabMeasurement');
+const { authMiddleware, requireRole } = require('./authRoutes');
+
+// Protect all routes
+router.use(authMiddleware);
 
 // GET /api/slabs - Get all slab measurements with filtering
-router.get('/', async(req, res) => {
+router.get('/', requireRole('admin'), async(req, res) => {
     try {
         const {
             page = 1,
@@ -58,7 +62,8 @@ router.post('/', async(req, res) => {
 
         // Validate required fields
         const requiredFields = [
-            'materialName', 'lotNumber', 'dispatchVehicleNumber',
+            'dispatchId', 'dispatchTimestamp',
+            'materialName', 'lotNumber',
             'supervisorName', 'partyName', 'slabNumber',
             'thickness', 'length', 'height', 'measurementUnit'
         ];
@@ -69,6 +74,11 @@ router.post('/', async(req, res) => {
                     message: `Missing required field: ${field}`
                 });
             }
+        }
+
+        // Vehicle number is optional, but set to empty string if not provided
+        if (!slabData.dispatchVehicleNumber) {
+            slabData.dispatchVehicleNumber = '';
         }
 
         const slab = new SlabMeasurement(slabData);
@@ -129,7 +139,7 @@ router.put('/:id', async(req, res) => {
 });
 
 // DELETE /api/slabs/:id - Delete a slab measurement
-router.delete('/:id', async(req, res) => {
+router.delete('/:id', requireRole('admin'), async(req, res) => {
     try {
         const slab = await SlabMeasurement.findByIdAndDelete(req.params.id);
 
@@ -141,6 +151,23 @@ router.delete('/:id', async(req, res) => {
     } catch (error) {
         res.status(500).json({
             message: 'Error deleting slab measurement',
+            error: error.message
+        });
+    }
+});
+
+// DELETE /api/slabs/clear-all - Delete all slab measurements
+router.delete('/clear-all', requireRole('admin'), async(req, res) => {
+    try {
+        const result = await SlabMeasurement.deleteMany({});
+
+        res.json({
+            message: 'All slab measurements cleared successfully',
+            deletedCount: result.deletedCount
+        });
+    } catch (error) {
+        res.status(500).json({
+            message: 'Error clearing all slab measurements',
             error: error.message
         });
     }
@@ -179,6 +206,57 @@ router.get('/last-slab/:lotNumber', async(req, res) => {
     } catch (error) {
         res.status(500).json({
             message: 'Error fetching last slab',
+            error: error.message
+        });
+    }
+});
+
+// GET /api/slabs/next-dispatch-code/:year/:month - Generate next dispatch code for lot number
+router.get('/next-dispatch-code/:year/:month', async(req, res) => {
+    try {
+        const { year, month } = req.params;
+
+        // Validate year and month
+        const yearNum = parseInt(year);
+        const monthNum = parseInt(month);
+
+        if (isNaN(yearNum) || isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
+            return res.status(400).json({ message: 'Invalid year or month provided' });
+        }
+
+        // Create month prefix (YYYYMM format)
+        const monthPrefix = `${yearNum}${monthNum.toString().padStart(2, '0')}`;
+
+        // Find the latest lot number for this month
+        const latestSlab = await SlabMeasurement.findOne({
+            lotNumber: { $regex: `^${monthPrefix}-`, $options: 'i' }
+        }).sort({ createdAt: -1 });
+
+        let nextDispatchCode = 1;
+
+        if (latestSlab && latestSlab.lotNumber) {
+            // Extract the dispatch code from the lot number (format: YYYYMM-XXX)
+            const lotParts = latestSlab.lotNumber.split('-');
+            if (lotParts.length >= 2) {
+                const lastCode = parseInt(lotParts[1]);
+                if (!isNaN(lastCode)) {
+                    nextDispatchCode = lastCode + 1;
+                }
+            }
+        }
+
+        // Format the dispatch code with leading zeros (3 digits)
+        const formattedCode = nextDispatchCode.toString().padStart(3, '0');
+        const nextLotNumber = `${monthPrefix}-${formattedCode}`;
+
+        res.json({
+            nextDispatchCode,
+            nextLotNumber,
+            monthPrefix
+        });
+    } catch (error) {
+        res.status(500).json({
+            message: 'Error generating next dispatch code',
             error: error.message
         });
     }
