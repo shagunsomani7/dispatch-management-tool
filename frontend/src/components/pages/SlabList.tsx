@@ -244,12 +244,6 @@ const SlabList = () => {
         </div>
         <div className="flex space-x-3">
           <button 
-            onClick={loadSlabs}
-            className="btn-secondary"
-          >
-            Refresh
-          </button>
-          <button 
             onClick={testConnection}
             className="bg-blue-600 text-white font-medium py-2 px-4 rounded-lg cursor-pointer hover:bg-blue-700"
           >
@@ -354,10 +348,13 @@ const SlabList = () => {
                         <div className="flex items-center justify-between">
                           <div>
                             <div className="font-semibold text-blue-900">
-                              Dispatch: {dispatch.dispatchId.split('-')[1]}
+                              Dispatch: {dispatch.dispatchId.replace(/^DISPATCH-/, '')}
                             </div>
                             <div className="text-sm text-blue-700">
                               {dispatch.partyName} • {dispatch.materialName} • Lot: {dispatch.lotNumber}
+                            </div>
+                            <div className="text-sm text-blue-700 mt-1">
+                              Thickness: {dispatch.slabs[0]?.thickness} {dispatch.slabs[0]?.measurementUnit}
                             </div>
                           </div>
                           <div className="text-right">
@@ -387,7 +384,7 @@ const SlabList = () => {
                               <tr key={slab._id} className="border-t">
                                 <td className="px-4 py-2 font-medium">{slab.slabNumber}</td>
                                 <td className="px-4 py-2">
-                                  {slab.thickness} × {slab.length} × {slab.height} {slab.measurementUnit}
+                                  {slab.length} × {slab.height} {slab.measurementUnit}
                                 </td>
                                 <td className="px-4 py-2">
                                   {slab.grossArea.toFixed(2)} ft²

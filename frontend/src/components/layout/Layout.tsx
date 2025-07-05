@@ -19,12 +19,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       <Header onHamburgerClick={() => setSidebarOpen(true)} />
       <div className="flex">
         {/* Sidebar for desktop */}
-        <div className="hidden md:block">
+        <div className="hidden lg:block">
           <Sidebar isMobile={false} />
         </div>
         {/* Sidebar for mobile (slide-in) */}
         {sidebarOpen && (
-          <div className="fixed inset-0 z-40 flex md:hidden">
+          <div className="fixed inset-0 z-40 flex lg:hidden">
             {/* Overlay */}
             <div className="fixed inset-0 bg-black opacity-30" onClick={() => setSidebarOpen(false)} />
             {/* Sidebar */}
@@ -33,7 +33,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             </div>
           </div>
         )}
-        <main className="flex-1 p-6">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8">
           {children}
         </main>
       </div>

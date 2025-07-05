@@ -6,6 +6,7 @@ import SlabEntry from './components/forms/SlabEntry';
 import SlabList from './components/pages/SlabList';
 import Reports from './components/reports/Reports';
 import Login from './components/auth/Login';
+import UserManagement from './components/pages/UserManagement';
 import { apiService } from './services/api';
 
 interface AuthProviderProps {
@@ -136,6 +137,13 @@ function App() {
             <RequireAuth>
               <Layout>
                 <SlabEntry />
+              </Layout>
+            </RequireAuth>
+          } />
+          <Route path="/user-management" element={
+            <RequireAuth requireAdmin>
+              <Layout>
+                <UserManagement />
               </Layout>
             </RequireAuth>
           } />

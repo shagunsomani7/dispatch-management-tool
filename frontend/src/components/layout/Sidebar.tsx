@@ -20,6 +20,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobile = false, onClose }) => {
       { path: '/entry', label: 'Slab Entry', icon: '📝' },
       { path: '/slabs', label: 'View Database', icon: '🗄️' },
       { path: '/reports', label: 'Reports', icon: '📈' },
+      { path: '/user-management', label: 'User Management', icon: '👤' },
     ];
   } else {
     menuItems = [
@@ -31,20 +32,25 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobile = false, onClose }) => {
     <aside
       className={
         isMobile
-          ? 'fixed left-0 top-0 w-64 h-full bg-white border-r border-gray-200 z-50 shadow-lg transition-transform duration-200'
-          : 'w-64 bg-white border-r border-gray-200 min-h-screen'
+          ? 'fixed left-0 top-0 w-72 sm:w-80 h-full bg-white border-r border-gray-200 z-50 shadow-lg transition-transform duration-200'
+          : 'w-64 xl:w-72 bg-white border-r border-gray-200 min-h-screen'
       }
     >
       {isMobile && (
-        <button
-          className="absolute top-3 right-3 text-gray-600 hover:text-gray-900 text-2xl"
-          onClick={onClose}
-          aria-label="Close sidebar"
-        >
-          &times;
-        </button>
+        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-800">Menu</h2>
+          <button
+            className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            onClick={onClose}
+            aria-label="Close sidebar"
+          >
+            <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
       )}
-      <nav className="p-4 mt-8">
+      <nav className={`p-4 ${isMobile ? 'mt-0' : 'mt-8'}`}>
         <ul className="space-y-2">
           {menuItems.map((item) => (
             <li key={item.path}>
@@ -52,7 +58,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobile = false, onClose }) => {
                 to={item.path}
                 className={`flex items-center space-x-3 p-3 rounded-lg transition-colors ${
                   location.pathname === item.path
-                    ? 'bg-primary-100 text-primary-700'
+                    ? 'bg-primary-100 text-primary-700 shadow-sm'
                     : 'text-gray-600 hover:bg-gray-100'
                 }`}
                 onClick={isMobile && onClose ? onClose : undefined}
