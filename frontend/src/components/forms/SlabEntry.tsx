@@ -709,7 +709,8 @@ const SlabEntry = () => {
     console.log('PDF Debug - Slabs data:', slabs);
     console.log('PDF Debug - Dispatch info:', dispatchInfo);
     
-    const tableData = slabs.map(slab => {
+    // Extract and normalize slab data for both table and totals
+    const slabsWithAreas = slabs.map(slab => {
       console.log('PDF Debug - Processing slab:', slab);
       
       // Handle different possible property names from API response
@@ -725,22 +726,35 @@ const SlabEntry = () => {
         slabNumber, length, height, grossArea, totalDeductionArea, netArea, corners
       });
       
+      return {
+        slabNumber,
+        length,
+        height,
+        grossArea,
+        totalDeductionArea,
+        netArea,
+        corners
+      };
+    });
+    
+    const tableData = slabsWithAreas.map(slab => {
       return [
-        slabNumber.toString(),
-        length.toFixed(2),
-        height.toFixed(2),
+        slab.slabNumber.toString(),
+        slab.length.toFixed(2),
+        slab.height.toFixed(2),
         (dispatchInfo.thickness || 0).toFixed(2),
-        grossArea.toFixed(2),
-        (corners[0]?.area || 0).toFixed(2),
-        (corners[1]?.area || 0).toFixed(2),
-        (corners[2]?.area || 0).toFixed(2),
-        (corners[3]?.area || 0).toFixed(2),
-        totalDeductionArea.toFixed(2),
-        netArea.toFixed(2)
+        slab.grossArea.toFixed(2),
+        (slab.corners[0]?.area || 0).toFixed(2),
+        (slab.corners[1]?.area || 0).toFixed(2),
+        (slab.corners[2]?.area || 0).toFixed(2),
+        (slab.corners[3]?.area || 0).toFixed(2),
+        slab.totalDeductionArea.toFixed(2),
+        slab.netArea.toFixed(2)
       ];
     });
     
     console.log('PDF Debug - Table data:', tableData);
+    console.log('PDF Debug - slabsWithAreas for totals:', slabsWithAreas);
 
     const totalTableWidth = 273;
     const centeredMargin = (pageWidth - totalTableWidth) / 2;
@@ -822,9 +836,22 @@ const SlabEntry = () => {
     const finalY = (pdf as any).lastAutoTable.finalY + 15;
 
     // Add totals with compact layout
-    const totalGross = (slabs || []).reduce((sum, slab) => sum + (slab?.grossArea || 0), 0);
-    const totalDeduct = (slabs || []).reduce((sum, slab) => sum + (slab?.totalDeductionArea || 0), 0);
-    const totalNet = (slabs || []).reduce((sum, slab) => sum + (slab?.netArea || 0), 0);
+    const totalGross = slabsWithAreas.reduce((sum, slab) => sum + (slab.grossArea || 0), 0);
+    const totalDeduct = slabsWithAreas.reduce((sum, slab) => sum + (slab.totalDeductionArea || 0), 0);
+    const totalNet = slabsWithAreas.reduce((sum, slab) => sum + (slab.netArea || 0), 0);
+    
+    console.log('PDF Debug - Calculated totals:');
+    console.log('totalGross:', totalGross);
+    console.log('totalDeduct:', totalDeduct);
+    console.log('totalNet:', totalNet);
+    console.log('PDF Debug - Individual slab values for totals:');
+    slabsWithAreas.forEach((slab, index) => {
+      console.log(`Slab ${index + 1} totals contribution:`, {
+        grossArea: slab.grossArea,
+        totalDeductionArea: slab.totalDeductionArea,
+        netArea: slab.netArea
+      });
+    });
 
     const totalsXLabel = pageWidth - margin - 180;
     const totalsXValue = pageWidth - margin - 5;
@@ -832,7 +859,7 @@ const SlabEntry = () => {
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
     pdf.text('Total Slabs Dispatched:', totalsXLabel, finalY);
-    pdf.text((slabs?.length || 0).toString(), totalsXValue, finalY, { align: 'right' });
+    pdf.text((slabsWithAreas?.length || 0).toString(), totalsXValue, finalY, { align: 'right' });
 
     pdf.text(`Total Gross Area (ft²):`, totalsXLabel, finalY + 5);
     pdf.text(totalGross.toFixed(2), totalsXValue, finalY + 5, { align: 'right' });
@@ -1257,12 +1284,12 @@ const SlabEntry = () => {
           </div>
 
           {/* Action Buttons */}
-          <div className="mt-4 border-t pt-4 flex justify-between">
-            <div className="flex space-x-2">
+          <div className="mt-4 border-t pt-4 flex flex-col sm:flex-row justify-between space-y-2 sm:space-y-0">
+            <div className="flex flex-col xs:flex-row space-y-2 xs:space-y-0 xs:space-x-2">
               <button
                 type="button"
                 onClick={clearSlab}
-                className="btn-secondary"
+                className="btn-secondary w-full xs:w-auto"
               >
                 Clear Form
               </button>
@@ -1270,7 +1297,7 @@ const SlabEntry = () => {
                 <button
                   type="button"
                   onClick={copyPrevious}
-                  className="btn-secondary"
+                  className="btn-secondary w-full xs:w-auto"
                   title="Copy from latest slab"
                 >
                   Copy Previous
@@ -1280,7 +1307,7 @@ const SlabEntry = () => {
             <button
               type="submit"
               disabled={loading}
-              className={`btn-primary ${saveSuccess ? 'bg-green-600 hover:bg-green-700' : ''}`}
+              className={`btn-primary w-full sm:w-auto ${saveSuccess ? 'bg-green-600 hover:bg-green-700' : ''}`}
             >
               {loading ? 'Adding...' : saveSuccess ? '✓ Added!' : 'Add to Dispatch'}
             </button>

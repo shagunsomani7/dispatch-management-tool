@@ -361,6 +361,25 @@ class ApiService {
       body: JSON.stringify({ name }),
     });
   }
+
+  // User Management API
+  async getUsers(): Promise<Array<{ _id: string; username: string; role: string }>> {
+    return this.request<Array<{ _id: string; username: string; role: string }>>('/auth/users');
+  }
+
+  async updateUser(id: string, data: { role?: string; password?: string }): Promise<{ _id: string; username: string; role: string }> {
+    return this.request<{ _id: string; username: string; role: string }>(`/auth/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async registerUser(data: { username: string; password: string; role: string }): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
 }
 
 export const apiService = new ApiService();

@@ -92,6 +92,36 @@ router.get('/me', authMiddleware, async(req, res) => {
     }
 });
 
+// List all users (admin only)
+router.get('/users', authMiddleware, requireRole('admin'), async(req, res) => {
+    try {
+        const users = await User.find({}, '-password');
+        res.json(users);
+    } catch (err) {
+        res.status(500).json({ message: 'Error fetching users', error: err.message });
+    }
+});
+
+// Update user role and/or password (admin only)
+router.put('/users/:id', authMiddleware, requireRole('admin'), async(req, res) => {
+    try {
+        const { role, password } = req.body;
+        const update = {};
+        if (role) update.role = role;
+        if (password) {
+            const hashedPassword = await bcrypt.hash(password, 10);
+            update.password = hashedPassword;
+        }
+        const user = await User.findByIdAndUpdate(req.params.id, update, { new: true, select: '-password' });
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        res.json(user);
+    } catch (err) {
+        res.status(500).json({ message: 'Error updating user', error: err.message });
+    }
+});
+
 module.exports = router;
 module.exports.authMiddleware = authMiddleware;
 module.exports.requireRole = requireRole;
