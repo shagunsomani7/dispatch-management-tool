@@ -51,6 +51,13 @@ const slabMeasurementSchema = new mongoose.Schema({
         index: true,
         default: ''
     },
+    dispatchWarehouse: {
+        type: String,
+        required: false,
+        trim: true,
+        index: true,
+        default: ''
+    },
     supervisorName: {
         type: String,
         required: true,
@@ -87,8 +94,8 @@ const slabMeasurementSchema = new mongoose.Schema({
     measurementUnit: {
         type: String,
         required: true,
-        enum: ['inches', 'cm', 'mm'],
-        default: 'mm'
+        enum: ['inches', 'cm'],
+        default: 'inches'
     },
     grossArea: {
         type: Number,
@@ -129,12 +136,10 @@ slabMeasurementSchema.index({ supervisorName: 1, createdAt: -1 });
 slabMeasurementSchema.pre('save', function(next) {
     // Convert measurements to feet first
     const lengthInFeet = this.length * (this.measurementUnit === 'inches' ? 1 / 12 :
-        this.measurementUnit === 'cm' ? 0.0328084 :
-        this.measurementUnit === 'mm' ? 0.00328084 : 1);
+        this.measurementUnit === 'cm' ? 0.0328084 : 1);
 
     const heightInFeet = this.height * (this.measurementUnit === 'inches' ? 1 / 12 :
-        this.measurementUnit === 'cm' ? 0.0328084 :
-        this.measurementUnit === 'mm' ? 0.00328084 : 1);
+        this.measurementUnit === 'cm' ? 0.0328084 : 1);
 
     // Calculate gross area in square feet
     this.grossArea = lengthInFeet * heightInFeet;
@@ -142,12 +147,10 @@ slabMeasurementSchema.pre('save', function(next) {
     // Calculate total deduction area in square feet
     this.totalDeductionArea = this.cornerDeductions.reduce((total, corner) => {
         const cornerLengthInFeet = corner.length * (this.measurementUnit === 'inches' ? 1 / 12 :
-            this.measurementUnit === 'cm' ? 0.0328084 :
-            this.measurementUnit === 'mm' ? 0.00328084 : 1);
+            this.measurementUnit === 'cm' ? 0.0328084 : 1);
 
         const cornerHeightInFeet = corner.height * (this.measurementUnit === 'inches' ? 1 / 12 :
-            this.measurementUnit === 'cm' ? 0.0328084 :
-            this.measurementUnit === 'mm' ? 0.00328084 : 1);
+            this.measurementUnit === 'cm' ? 0.0328084 : 1);
 
         corner.area = cornerLengthInFeet * cornerHeightInFeet;
         return total + corner.area;
@@ -170,9 +173,8 @@ slabMeasurementSchema.virtual('formattedDate').get(function() {
 // Method to convert units
 slabMeasurementSchema.methods.convertToUnit = function(targetUnit) {
     const conversions = {
-        'mm': { 'cm': 0.1, 'inches': 0.0393701 },
-        'cm': { 'mm': 10, 'inches': 0.393701 },
-        'inches': { 'mm': 25.4, 'cm': 2.54 }
+        'cm': { 'inches': 0.393701 },
+        'inches': { 'cm': 2.54 }
     };
 
     if (this.measurementUnit === targetUnit) {

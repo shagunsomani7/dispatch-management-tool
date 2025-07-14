@@ -262,4 +262,51 @@ router.get('/next-dispatch-code/:year/:month', async(req, res) => {
     }
 });
 
+// GET /api/slabs/dispatch/:dispatchId - Get all slabs for a specific dispatch ID
+router.get('/dispatch/:dispatchId', async(req, res) => {
+    try {
+        const { dispatchId } = req.params;
+
+        if (!dispatchId) {
+            return res.status(400).json({ message: 'Dispatch ID is required' });
+        }
+
+        // Find all slabs for this dispatch, sorted by slab number
+        const slabs = await SlabMeasurement.find({
+            dispatchId: dispatchId
+        }).sort({ slabNumber: 1 }); // Sort by slab number ascending
+
+        if (!slabs || slabs.length === 0) {
+            return res.status(404).json({ message: 'No slabs found for this dispatch ID' });
+        }
+
+        // Calculate totals
+        const totalSlabs = slabs.length;
+        const totalNetArea = slabs.reduce((sum, slab) => sum + (slab.netArea || 0), 0);
+
+        res.json({
+            dispatchId,
+            slabs,
+            totalSlabs,
+            totalNetArea,
+            // Include dispatch info from the first slab
+            dispatchInfo: {
+                dispatchTimestamp: slabs[0].dispatchTimestamp,
+                materialName: slabs[0].materialName,
+                lotNumber: slabs[0].lotNumber,
+                partyName: slabs[0].partyName,
+                supervisorName: slabs[0].supervisorName,
+                vehicleNumber: slabs[0].dispatchVehicleNumber,
+                measurementUnit: slabs[0].measurementUnit,
+                thickness: slabs[0].thickness
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            message: 'Error fetching slabs for dispatch',
+            error: error.message
+        });
+    }
+});
+
 module.exports = router;

@@ -210,6 +210,40 @@ class ApiService {
     }>(`/slabs/next-dispatch-code/${year}/${month}`);
   }
 
+  async getSlabsByDispatchId(dispatchId: string): Promise<{
+    dispatchId: string;
+    slabs: SlabMeasurement[];
+    totalSlabs: number;
+    totalNetArea: number;
+    dispatchInfo: {
+      dispatchTimestamp: Date;
+      materialName: string;
+      lotNumber: string;
+      partyName: string;
+      supervisorName: string;
+      vehicleNumber: string;
+      measurementUnit: string;
+      thickness: number;
+    };
+  }> {
+    return this.request<{
+      dispatchId: string;
+      slabs: SlabMeasurement[];
+      totalSlabs: number;
+      totalNetArea: number;
+      dispatchInfo: {
+        dispatchTimestamp: Date;
+        materialName: string;
+        lotNumber: string;
+        partyName: string;
+        supervisorName: string;
+        vehicleNumber: string;
+        measurementUnit: string;
+        thickness: number;
+      };
+    }>(`/slabs/dispatch/${dispatchId}`);
+  }
+
   // Reports API
   async getAnalytics(filters?: ReportFilters): Promise<{
     summary: {

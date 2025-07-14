@@ -25,13 +25,17 @@ const SlabEntry = () => {
   // Common dispatch information
   const [dispatchInfo, setDispatchInfo] = useState({
     materialName: '',
-    lotNumber: '',
+    lotNumber: '', // User-entered lot number
     dispatchVehicleNumber: '',
+    dispatchWarehouse: '', // Warehouse location
     supervisorName: user?.username || '',
     partyName: '',
     measurementUnit: 'inches' as MeasurementUnit,
     thickness: 16 // Default thickness
   });
+
+  // Auto-generated dispatch number for database (internal use)
+  const [dispatchNumber, setDispatchNumber] = useState('');
 
   // Single slab form data
   const [slab, setSlab] = useState<SlabFormData>({
@@ -59,6 +63,7 @@ const SlabEntry = () => {
   const [thicknessOptions] = useState([16, 18, 20]);
   const [showThicknessSuggestions, setShowThicknessSuggestions] = useState(false);
   const [errors, setErrors] = useState<{[key: string]: string}>({});
+  const [slabNumberDirection, setSlabNumberDirection] = useState<'up' | 'down'>('up');
 
   // Material and party options
   const [materials, setMaterials] = useState([
@@ -79,24 +84,17 @@ const SlabEntry = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const inputRef = useRef(null);
 
-  // Load initial data and slabs
+  // Load initial data and generate initial lot number
   useEffect(() => {
     const loadInitialData = async () => {
       try {
         // Load materials from database
         const materialsData = await apiService.getMaterials();
         setMaterials(materialsData.map((m: { name: string }) => m.name));
-        
-        // Generate automatic lot number with format YYYYMM-DispatchCode
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth() + 1;
-        
-        const dispatchData = await apiService.getNextDispatchCode(year, month);
-        setDispatchInfo(prev => ({
-          ...prev,
-          lotNumber: dispatchData.nextLotNumber
-        }));
+
+        // Generate initial dispatch number for database
+        const initialDispatchNumber = generateDispatchNumber();
+        setDispatchNumber(initialDispatchNumber);
 
         // Initialize empty dispatch slabs
         setCurrentDispatchSlabs([]);
@@ -109,6 +107,10 @@ const SlabEntry = () => {
           'Marble Black',
           'Quartz Premium'
         ]);
+        
+        // Still generate dispatch number even if materials loading fails
+        const initialDispatchNumber = generateDispatchNumber();
+        setDispatchNumber(initialDispatchNumber);
       }
     };
     
@@ -131,25 +133,46 @@ const SlabEntry = () => {
     return () => { active = false; };
   }, [partyQuery]);
 
-  // Clear slabs when lot number changes (new dispatch)
-  useEffect(() => {
-    if (dispatchInfo.lotNumber) {
-      setCurrentDispatchSlabs([]);
-    }
-  }, [dispatchInfo.lotNumber]);
+  // State to track if we're in the middle of a dispatch batch
+  const [isDispatchStarted, setIsDispatchStarted] = useState(false);
 
-  // Auto-set next slab number when dispatch slabs change
+  // State for inline editing
+  const [editingSlabId, setEditingSlabId] = useState<string | null>(null);
+  const [editingValues, setEditingValues] = useState<{
+    length: number;
+    height: number;
+  }>({ length: 0, height: 0 });
+
+  // Function to generate dispatch number in format YYYYMM-timestamp (for database)
+  const generateDispatchNumber = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    const timestamp = Date.now();
+    return `${year}${month}-${timestamp}`;
+  };
+
+  // Auto-set next slab number when dispatch slabs change or direction changes
   useEffect(() => {
     if (currentDispatchSlabs.length > 0) {
-      const maxSlabNumber = Math.max(...currentDispatchSlabs.map(s => s.slabNumber));
-      const nextNumber = maxSlabNumber + 1;
+      const slabNumbers = currentDispatchSlabs.map(s => s.slabNumber);
+      let nextNumber: number;
+      
+      if (slabNumberDirection === 'up') {
+        const maxSlabNumber = Math.max(...slabNumbers);
+        nextNumber = maxSlabNumber + 1;
+      } else {
+        const minSlabNumber = Math.min(...slabNumbers);
+        nextNumber = minSlabNumber - 1;
+      }
+      
       setSlab(prev => ({ ...prev, slabNumber: nextNumber }));
-      setSlabNumberInput((nextNumber || 1).toString());
+      setSlabNumberInput(nextNumber.toString());
     } else {
       setSlab(prev => ({ ...prev, slabNumber: 1 }));
       setSlabNumberInput('1');
     }
-  }, [currentDispatchSlabs]);
+  }, [currentDispatchSlabs, slabNumberDirection]);
 
   // No longer needed - using temporary storage
 
@@ -172,12 +195,10 @@ const SlabEntry = () => {
       const heightValue = Number(updated.height) || 0;
       
       const lengthInFeet = lengthValue * (dispatchInfo.measurementUnit === 'inches' ? 1/12 : 
-                                        dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 
-                                        dispatchInfo.measurementUnit === 'mm' ? 0.00328084 : 1);
+                                        dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 1);
       
       const heightInFeet = heightValue * (dispatchInfo.measurementUnit === 'inches' ? 1/12 : 
-                                        dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 
-                                        dispatchInfo.measurementUnit === 'mm' ? 0.00328084 : 1);
+                                        dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 1);
       
       updated.grossArea = Number((lengthInFeet * heightInFeet).toFixed(4)) || 0;
       updated.totalDeductionArea = updated.cornerDeductions.reduce((sum, corner) => sum + (Number(corner.area) || 0), 0);
@@ -202,12 +223,10 @@ const SlabEntry = () => {
       const cornerHeightValue = Number(corner.height) || 0;
       
       const lengthInFeet = cornerLengthValue * (dispatchInfo.measurementUnit === 'inches' ? 1/12 : 
-                                           dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 
-                                           dispatchInfo.measurementUnit === 'mm' ? 0.00328084 : 1);
+                                           dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 1);
       
       const heightInFeet = cornerHeightValue * (dispatchInfo.measurementUnit === 'inches' ? 1/12 : 
-                                           dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 
-                                           dispatchInfo.measurementUnit === 'mm' ? 0.00328084 : 1);
+                                           dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 1);
       
       corner.area = Number((lengthInFeet * heightInFeet).toFixed(4)) || 0;
 
@@ -246,9 +265,17 @@ const SlabEntry = () => {
   };
 
   const clearSlab = () => {
-    const nextSlabNumber = currentDispatchSlabs.length > 0 
-      ? Math.max(...currentDispatchSlabs.map(s => s.slabNumber)) + 1 
-      : 1;
+    let nextSlabNumber: number;
+    if (currentDispatchSlabs.length > 0) {
+      const slabNumbers = currentDispatchSlabs.map(s => s.slabNumber);
+      if (slabNumberDirection === 'up') {
+        nextSlabNumber = Math.max(...slabNumbers) + 1;
+      } else {
+        nextSlabNumber = Math.min(...slabNumbers) - 1;
+      }
+    } else {
+      nextSlabNumber = 1;
+    }
     setSlab({
       id: '',
       slabNumber: nextSlabNumber,
@@ -360,22 +387,7 @@ const SlabEntry = () => {
     }
   };
 
-  const generateNewLotNumber = async () => {
-    try {
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = now.getMonth() + 1;
-      
-      const dispatchData = await apiService.getNextDispatchCode(year, month);
-      setDispatchInfo(prev => ({
-        ...prev,
-        lotNumber: dispatchData.nextLotNumber
-      }));
-    } catch (error) {
-      console.error('Error generating new lot number:', error);
-      alert('Error generating new lot number. Please try again.');
-    }
-  };
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -383,6 +395,11 @@ const SlabEntry = () => {
     // Validation
     if (!dispatchInfo.materialName || !dispatchInfo.lotNumber || !dispatchInfo.partyName) {
       alert('Please fill in all required dispatch information fields');
+      return;
+    }
+
+    if (!dispatchNumber) {
+      alert('Dispatch number not generated. Please refresh the page.');
       return;
     }
 
@@ -408,7 +425,10 @@ const SlabEntry = () => {
         timestamp: new Date()
       };
 
-      setCurrentDispatchSlabs(prev => [...prev, newSlab].sort((a, b) => a.slabNumber - b.slabNumber));
+      setCurrentDispatchSlabs(prev => [...prev, newSlab]);
+      
+      // Mark dispatch as started so dispatch info persists
+      setIsDispatchStarted(true);
       
       // Show success feedback briefly
       setSaveSuccess(true);
@@ -426,9 +446,123 @@ const SlabEntry = () => {
   const deleteSlab = (slabId: string) => {
     const slabToDelete = currentDispatchSlabs.find(s => s.id === slabId);
     if (slabToDelete && window.confirm(`Are you sure you want to delete slab #${slabToDelete.slabNumber}?`)) {
-      setCurrentDispatchSlabs(prev => prev.filter(s => s.id !== slabId));
+      const updatedSlabs = currentDispatchSlabs.filter(s => s.id !== slabId);
+      setCurrentDispatchSlabs(updatedSlabs);
+      
+      // If no slabs left, reset dispatch started flag
+      if (updatedSlabs.length === 0) {
+        setIsDispatchStarted(false);
+      }
+      
       alert(`Slab #${slabToDelete.slabNumber} has been deleted.`);
     }
+  };
+
+  // Functions for inline editing
+  const startEditingDimensions = (slab: SlabFormData) => {
+    setEditingSlabId(slab.id);
+    setEditingValues({
+      length: slab.length,
+      height: slab.height
+    });
+  };
+
+  const cancelEditingDimensions = () => {
+    setEditingSlabId(null);
+    setEditingValues({ length: 0, height: 0 });
+  };
+
+  const saveEditingDimensions = () => {
+    if (editingSlabId) {
+      setCurrentDispatchSlabs(prev => 
+        prev.map(slab => {
+          if (slab.id === editingSlabId) {
+            // Recalculate areas with new dimensions
+            const lengthValue = editingValues.length || 0;
+            const heightValue = editingValues.height || 0;
+            
+            // Convert to feet for area calculation
+            const lengthInFeet = lengthValue * (dispatchInfo.measurementUnit === 'inches' ? 1/12 : 
+                                               dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 1);
+            const heightInFeet = heightValue * (dispatchInfo.measurementUnit === 'inches' ? 1/12 : 
+                                               dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 1);
+            
+            const grossArea = lengthInFeet * heightInFeet;
+            
+            // Recalculate corner deduction areas with new measurement unit
+            const updatedCornerDeductions = slab.cornerDeductions.map(corner => {
+              const cornerLengthInFeet = (corner.length || 0) * (dispatchInfo.measurementUnit === 'inches' ? 1/12 : 
+                                                                 dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 1);
+              const cornerHeightInFeet = (corner.height || 0) * (dispatchInfo.measurementUnit === 'inches' ? 1/12 : 
+                                                                 dispatchInfo.measurementUnit === 'cm' ? 0.0328084 : 1);
+              
+              return {
+                ...corner,
+                area: cornerLengthInFeet * cornerHeightInFeet
+              };
+            });
+            
+            const totalDeductionArea = updatedCornerDeductions.reduce((sum, corner) => sum + (corner.area || 0), 0);
+            const netArea = Math.max(0, grossArea - totalDeductionArea);
+            
+            return {
+              ...slab,
+              length: lengthValue,
+              height: heightValue,
+              grossArea: Number(grossArea.toFixed(4)),
+              totalDeductionArea: Number(totalDeductionArea.toFixed(4)),
+              netArea: Number(netArea.toFixed(4)),
+              cornerDeductions: updatedCornerDeductions
+            };
+          }
+          return slab;
+        })
+      );
+      
+      // Reset editing state
+      setEditingSlabId(null);
+      setEditingValues({ length: 0, height: 0 });
+    }
+  };
+
+  const handleEditingValueChange = (field: 'length' | 'height', value: number) => {
+    setEditingValues(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const startNewDispatch = () => {
+    setCurrentDispatchSlabs([]);
+    setIsDispatchStarted(false);
+    // Reset dispatch info and generate new dispatch number
+    const newDispatchNumber = generateDispatchNumber();
+    setDispatchNumber(newDispatchNumber);
+    setDispatchInfo({
+      materialName: '',
+      lotNumber: '', // User will enter this
+      dispatchVehicleNumber: '',
+      dispatchWarehouse: '',
+      supervisorName: user?.username || '',
+      partyName: '',
+      measurementUnit: 'inches' as MeasurementUnit,
+      thickness: 16
+    });
+    // Reset slab form
+    setSlab({
+      id: '',
+      slabNumber: 1,
+      length: 0,
+      height: 0,
+      cornerDeductions: [
+        { id: '1', length: 0, height: 0, area: 0 }
+      ],
+      grossArea: 0,
+      totalDeductionArea: 0,
+      netArea: 0,
+      timestamp: new Date()
+    });
+    setSlabNumberInput('1');
   };
 
   // Generate Report - Save all slabs to database and create PDF
@@ -461,7 +595,8 @@ const SlabEntry = () => {
       setLoading(true);
       setError(null);
 
-      const dispatchId = `DISPATCH-${dispatchInfo.lotNumber}-${Date.now()}`;
+      // Use the auto-generated dispatch number as the unique dispatch ID
+      const dispatchId = dispatchNumber;
       const dispatchTimestamp = new Date();
 
       // Save all slabs to database
@@ -469,7 +604,7 @@ const SlabEntry = () => {
       for (const tempSlab of currentDispatchSlabs) {
         const slabData = {
           materialName: dispatchInfo.materialName,
-          lotNumber: dispatchInfo.lotNumber,
+          lotNumber: dispatchInfo.lotNumber, // User-entered lot number
           partyName: dispatchInfo.partyName,
           supervisorName: dispatchInfo.supervisorName,
           thickness: dispatchInfo.thickness,
@@ -482,7 +617,7 @@ const SlabEntry = () => {
           grossArea: tempSlab.grossArea,
           totalDeductionArea: tempSlab.totalDeductionArea,
           netArea: tempSlab.netArea,
-          dispatchId: dispatchId,
+          dispatchId: dispatchId, // Auto-generated dispatch number
           dispatchTimestamp: dispatchTimestamp
         };
 
@@ -498,8 +633,21 @@ const SlabEntry = () => {
       }
       const { fileName, pdfBlob } = pdfResult;
 
-      // Clear the dispatch after successful generation
+      // Clear the dispatch after successful generation and start new dispatch with new lot number
       setCurrentDispatchSlabs([]);
+      setIsDispatchStarted(false);
+      
+      // Generate new dispatch number for next dispatch
+      const newDispatchNumber = generateDispatchNumber();
+      setDispatchNumber(newDispatchNumber);
+      setDispatchInfo(prev => ({
+        ...prev,
+        materialName: '',
+        lotNumber: '', // User will enter this
+        dispatchVehicleNumber: '',
+        partyName: ''
+      }));
+      
       clearSlab();
       
       // Enhanced sharing function for mobile PDF sharing
@@ -625,42 +773,21 @@ const SlabEntry = () => {
     const currentDate = new Date();
     const formattedDate = formatDate(currentDate);
 
-    // Company Details
-    const companyDetails = {
-      name: 'SAMDANI GROUP',
-      addressLine1: '123 Industrial Zone, Main Road',
-      addressLine2: 'Cityville, ST 12345',
-      phone: 'Phone: (555) 123-4567',
-      email: 'Email: contact@samdanigroup.com',
-    };
-
-    // Add Header with compact layout
+    // Add Header with simplified layout
     pdf.setFontSize(16);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(PRIMARY_COLOR[0], PRIMARY_COLOR[1], PRIMARY_COLOR[2]);
     
-    // Company name and dispatch note on same line
-    pdf.text(companyDetails.name, margin, yPosition);
-    pdf.setFontSize(12);
-    pdf.text('DISPATCH NOTE', pageWidth - margin, yPosition, { align: 'right' });
+    // Simple dispatch note header
+    pdf.text('DISPATCH NOTE', pageWidth / 2, yPosition, { align: 'center' });
     addSpacing(1);
 
-    // Company details in two columns with minimal spacing
-    pdf.setFontSize(8);
+    // Date
+    pdf.setFontSize(10);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(TEXT_COLOR_DARK);
-    
-    // Left column - Company details
-    pdf.text(companyDetails.addressLine1, margin, yPosition);
-    pdf.text(companyDetails.addressLine2, margin, yPosition + 4);
-    pdf.text(companyDetails.phone, margin, yPosition + 8);
-    pdf.text(companyDetails.email, margin, yPosition + 12);
-
-    // Right column - Dispatch details
-    const dispatchNoteNumber = `DN-${Date.now().toString().slice(-6)}`;
-    pdf.text(`Dispatch No: ${dispatchNoteNumber}`, pageWidth - margin, yPosition, { align: 'right' });
-    pdf.text(`Date: ${formattedDate}`, pageWidth - margin, yPosition + 4, { align: 'right' });
-    addSpacing(3);
+    pdf.text(`Date: ${formattedDate}`, pageWidth - margin, yPosition, { align: 'right' });
+    addSpacing(2);
 
     // Add first separator
     addSeparator();
@@ -670,18 +797,15 @@ const SlabEntry = () => {
     const col2X = margin + (pageWidth - 2 * margin) / 2 + 20;
     const infoY = yPosition;
 
-    // Billed To and Dispatched From section with background
+    // Billed To section with background
     pdf.setFillColor(HEADER_BG[0], HEADER_BG[1], HEADER_BG[2]);
     pdf.rect(col1X - 5, infoY - 5, (pageWidth - 2 * margin) / 2, 25, 'F');
-    pdf.rect(col2X - 5, infoY - 5, (pageWidth - 2 * margin) / 2, 25, 'F');
 
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(9);
     pdf.text('BILLED TO:', col1X, infoY);
-    pdf.text('DISPATCHED FROM:', col2X, infoY);
     pdf.setFont('helvetica', 'normal');
     pdf.text(dispatchInfo.partyName || 'N/A', col1X, infoY + 5);
-    pdf.text(companyDetails.name, col2X, infoY + 5);
     yPosition = infoY + 12;
 
     // Material and Vehicle Info
@@ -738,17 +862,16 @@ const SlabEntry = () => {
     });
     
     const tableData = slabsWithAreas.map(slab => {
+      // Format deduction dimensions as L×H, filter out empty corners
+      const deductionDimensions = slab.corners
+        .filter((corner: any) => corner.length > 0 || corner.height > 0)
+        .map((corner: any) => `${corner.length || 0}×${corner.height || 0}`)
+        .join(', ') || 'None';
+
       return [
         slab.slabNumber.toString(),
-        slab.length.toFixed(2),
-        slab.height.toFixed(2),
-        (dispatchInfo.thickness || 0).toFixed(2),
-        slab.grossArea.toFixed(2),
-        (slab.corners[0]?.area || 0).toFixed(2),
-        (slab.corners[1]?.area || 0).toFixed(2),
-        (slab.corners[2]?.area || 0).toFixed(2),
-        (slab.corners[3]?.area || 0).toFixed(2),
-        slab.totalDeductionArea.toFixed(2),
+        `${slab.length.toFixed(2)}×${slab.height.toFixed(2)}`,
+        deductionDimensions,
         slab.netArea.toFixed(2)
       ];
     });
@@ -756,7 +879,7 @@ const SlabEntry = () => {
     console.log('PDF Debug - Table data:', tableData);
     console.log('PDF Debug - slabsWithAreas for totals:', slabsWithAreas);
 
-    const totalTableWidth = 273;
+    const totalTableWidth = 170; // Reduced width for 4 columns
     const centeredMargin = (pageWidth - totalTableWidth) / 2;
 
     // Add table using autoTable with enhanced columns
@@ -764,16 +887,9 @@ const SlabEntry = () => {
       startY: yPosition,
       head: [[
         'Slab #',
-        `L (${dispatchInfo.measurementUnit})`,
-        `H (${dispatchInfo.measurementUnit})`,
-        `T (${dispatchInfo.measurementUnit})`,
-        `Gross (ft²)`,
-        `C1 (ft²)`,
-        `C2 (ft²)`,
-        `C3 (ft²)`,
-        `C4 (ft²)`,
-        `Deduct (ft²)`,
-        `Net (ft²)`
+        `Dimensions (${dispatchInfo.measurementUnit})`,
+        `Deductions (${dispatchInfo.measurementUnit})`,
+        `Net Area (ft²)`
       ]],
       body: tableData,
       theme: 'grid',
@@ -792,17 +908,10 @@ const SlabEntry = () => {
         valign: 'middle'
       },
       columnStyles: {
-        0: { cellWidth: 18, halign: 'center' },
-        1: { cellWidth: 20 },
-        2: { cellWidth: 20 },
-        3: { cellWidth: 20 },
-        4: { cellWidth: 25 },
-        5: { cellWidth: 20 },
-        6: { cellWidth: 20 },
-        7: { cellWidth: 20 },
-        8: { cellWidth: 20 },
-        9: { cellWidth: 25 },
-        10: { cellWidth: 25 }
+        0: { cellWidth: 25, halign: 'center' }, // Slab #
+        1: { cellWidth: 45 }, // Dimensions (L×H)
+        2: { cellWidth: 60 }, // Deductions (L×H format)
+        3: { cellWidth: 40 }  // Net Area
       },
       alternateRowStyles: {
         fillColor: [245, 245, 245] as [number, number, number]
@@ -835,20 +944,14 @@ const SlabEntry = () => {
     // Get the final Y position after the table
     const finalY = (pdf as any).lastAutoTable.finalY + 15;
 
-    // Add totals with compact layout
-    const totalGross = slabsWithAreas.reduce((sum, slab) => sum + (slab.grossArea || 0), 0);
-    const totalDeduct = slabsWithAreas.reduce((sum, slab) => sum + (slab.totalDeductionArea || 0), 0);
+    // Add totals with simplified layout
     const totalNet = slabsWithAreas.reduce((sum, slab) => sum + (slab.netArea || 0), 0);
     
     console.log('PDF Debug - Calculated totals:');
-    console.log('totalGross:', totalGross);
-    console.log('totalDeduct:', totalDeduct);
     console.log('totalNet:', totalNet);
     console.log('PDF Debug - Individual slab values for totals:');
     slabsWithAreas.forEach((slab, index) => {
       console.log(`Slab ${index + 1} totals contribution:`, {
-        grossArea: slab.grossArea,
-        totalDeductionArea: slab.totalDeductionArea,
         netArea: slab.netArea
       });
     });
@@ -861,18 +964,12 @@ const SlabEntry = () => {
     pdf.text('Total Slabs Dispatched:', totalsXLabel, finalY);
     pdf.text((slabsWithAreas?.length || 0).toString(), totalsXValue, finalY, { align: 'right' });
 
-    pdf.text(`Total Gross Area (ft²):`, totalsXLabel, finalY + 5);
-    pdf.text(totalGross.toFixed(2), totalsXValue, finalY + 5, { align: 'right' });
-
-    pdf.text(`Total Deduction Area (ft²):`, totalsXLabel, finalY + 10);
-    pdf.text(totalDeduct.toFixed(2), totalsXValue, finalY + 10, { align: 'right' });
-
     pdf.setFont('helvetica', 'bold');
-    pdf.text(`TOTAL NET DISPATCHED AREA (ft²):`, totalsXLabel, finalY + 15);
-    pdf.text(totalNet.toFixed(2), totalsXValue, finalY + 15, { align: 'right' });
+    pdf.text(`TOTAL NET DISPATCHED AREA (ft²):`, totalsXLabel, finalY + 10);
+    pdf.text(totalNet.toFixed(2), totalsXValue, finalY + 10, { align: 'right' });
 
     // Add notes and signature
-    const notesY = finalY + 55;
+    const notesY = finalY + 45; // Reduced spacing since we have fewer totals
     const signatureX = pageWidth - margin - 80;
 
     pdf.setFont('helvetica', 'bold');
@@ -906,12 +1003,23 @@ const SlabEntry = () => {
           <h1 className="text-2xl font-bold text-gray-900">Slab Entry</h1>
           <p className="text-gray-600">Enter single slab measurements</p>
         </div>
-        <button
-          onClick={() => navigate('/dashboard')}
-          className="btn-secondary"
-        >
-          Back to Dashboard
-        </button>
+        <div className="flex space-x-2">
+          {isDispatchStarted && (
+            <button
+              onClick={startNewDispatch}
+              className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+              title="Start a new dispatch batch"
+            >
+              New Dispatch
+            </button>
+          )}
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="btn-secondary"
+          >
+            Back to Dashboard
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -924,100 +1032,19 @@ const SlabEntry = () => {
         {/* Dispatch Information */}
         <div className="card">
           <div className="card-header">
-            <h3 className="text-lg font-semibold">Dispatch Information</h3>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Material Name */}
-            <div className="form-group">
-              <label className="form-label">Material Name *</label>
-              <div className="flex space-x-2">
-                <select
-                  value={dispatchInfo.materialName}
-                  onChange={(e) => {
-                    if (e.target.value === 'ADD_NEW') {
-                      setShowAddMaterial(true);
-                    } else {
-                      handleDispatchInfoChange('materialName', e.target.value);
-                    }
-                  }}
-                  className="input-field flex-1"
-                  required
-                >
-                  <option value="">Select Material</option>
-                  {materials.map(material => (
-                    <option key={material} value={material}>{material}</option>
-                  ))}
-                  <option value="ADD_NEW">+ Add New Material</option>
-                </select>
-              </div>
-              
-              {showAddMaterial && (
-                <div className="mt-2 flex space-x-2">
-                  <input
-                    type="text"
-                    value={newMaterial}
-                    onChange={(e) => setNewMaterial(e.target.value)}
-                    placeholder="Enter new material name"
-                    className="input-field flex-1"
-                  />
-                  <button type="button" onClick={addNewMaterial} className="btn-primary">Add</button>
-                  <button type="button" onClick={() => setShowAddMaterial(false)} className="btn-secondary">Cancel</button>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Dispatch Information</h3>
+              {isDispatchStarted && (
+                <div className="flex items-center gap-2 text-green-600">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="text-sm font-medium">Dispatch Active</span>
                 </div>
               )}
             </div>
-
-            {/* Lot Number */}
-            <div className="form-group">
-              <label className="form-label">Lot Number (UID) *</label>
-              <div className="flex space-x-2">
-                <input
-                  type="text"
-                  value={dispatchInfo.lotNumber}
-                  className="input-field bg-gray-100 flex-1"
-                  placeholder="Auto-generated (YYYYMM-DispatchCode)"
-                  readOnly
-                />
-                <button
-                  type="button"
-                  onClick={generateNewLotNumber}
-                  className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-1"
-                  title="Generate new lot number"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  <span>Refresh</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Vehicle Number */}
-            <div className="form-group">
-              <label className="form-label">Vehicle Number</label>
-              <input
-                type="text"
-                value={dispatchInfo.dispatchVehicleNumber}
-                onChange={(e) => handleDispatchInfoChange('dispatchVehicleNumber', e.target.value)}
-                className="input-field"
-                placeholder="Enter vehicle number"
-              />
-            </div>
-
-            {/* Supervisor Name */}
-            <div className="form-group">
-              <label className="form-label">Supervisor Name *</label>
-              <input
-                type="text"
-                value={dispatchInfo.supervisorName}
-                onChange={(e) => handleDispatchInfoChange('supervisorName', e.target.value)}
-                className="input-field bg-gray-100"
-                placeholder="Auto-populated"
-                readOnly
-              />
-            </div>
-
-            {/* Party Name */}
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Party Name - Moved to first position */}
             <div className="form-group">
               <label className="form-label">Party Name *</label>
               <div className="relative">
@@ -1030,14 +1057,15 @@ const SlabEntry = () => {
                     setPartyQuery(e.target.value);
                     setShowSuggestions(true);
                   }}
-                  onFocus={() => setShowSuggestions(true)}
+                  onFocus={() => !isDispatchStarted && setShowSuggestions(true)}
                   onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-                  className="input-field w-full"
+                  className={`input-field w-full ${isDispatchStarted ? 'bg-gray-100' : ''}`}
                   placeholder="Type or select party name"
                   autoComplete="off"
                   required
+                  readOnly={isDispatchStarted}
                 />
-                {showSuggestions && (
+                {showSuggestions && !isDispatchStarted && (
                   <ul className="absolute z-10 left-0 right-0 bg-white border border-gray-200 rounded shadow mt-1 max-h-52 overflow-y-auto">
                     {loadingParties ? (
                       <li className="px-4 py-2 text-gray-500">Loading...</li>
@@ -1090,6 +1118,97 @@ const SlabEntry = () => {
               )}
             </div>
 
+            {/* Material Name */}
+            <div className="form-group">
+              <label className="form-label">Material Name *</label>
+              <div className="flex space-x-2">
+                <select
+                  value={dispatchInfo.materialName}
+                  onChange={(e) => {
+                    if (e.target.value === 'ADD_NEW') {
+                      setShowAddMaterial(true);
+                    } else {
+                      handleDispatchInfoChange('materialName', e.target.value);
+                    }
+                  }}
+                  className={`input-field flex-1 ${isDispatchStarted ? 'bg-gray-100' : ''}`}
+                  required
+                  disabled={isDispatchStarted}
+                >
+                  <option value="">Select Material</option>
+                  {materials.map(material => (
+                    <option key={material} value={material}>{material}</option>
+                  ))}
+                  <option value="ADD_NEW">+ Add New Material</option>
+                </select>
+              </div>
+              
+              {showAddMaterial && (
+                <div className="mt-2 flex space-x-2">
+                  <input
+                    type="text"
+                    value={newMaterial}
+                    onChange={(e) => setNewMaterial(e.target.value)}
+                    placeholder="Enter new material name"
+                    className="input-field flex-1"
+                  />
+                  <button type="button" onClick={addNewMaterial} className="btn-primary">Add</button>
+                  <button type="button" onClick={() => setShowAddMaterial(false)} className="btn-secondary">Cancel</button>
+                </div>
+              )}
+            </div>
+
+            {/* Lot Number - User entered */}
+            <div className="form-group">
+              <label className="form-label">Lot Number *</label>
+              <input
+                type="text"
+                value={dispatchInfo.lotNumber}
+                onChange={(e) => handleDispatchInfoChange('lotNumber', e.target.value)}
+                className={`input-field ${isDispatchStarted ? 'bg-gray-100' : ''}`}
+                placeholder="Enter lot number"
+                required
+                readOnly={isDispatchStarted}
+              />
+            </div>
+
+            {/* Vehicle Number */}
+            <div className="form-group">
+              <label className="form-label">Vehicle Number</label>
+              <input
+                type="text"
+                value={dispatchInfo.dispatchVehicleNumber}
+                onChange={(e) => handleDispatchInfoChange('dispatchVehicleNumber', e.target.value)}
+                className="input-field"
+                placeholder="Enter vehicle number"
+              />
+            </div>
+
+            {/* Dispatch Warehouse */}
+            <div className="form-group">
+              <label className="form-label">Dispatch Warehouse</label>
+              <input
+                type="text"
+                value={dispatchInfo.dispatchWarehouse}
+                onChange={(e) => handleDispatchInfoChange('dispatchWarehouse', e.target.value)}
+                className="input-field"
+                placeholder="Enter warehouse location"
+              />
+            </div>
+
+            {/* Supervisor Name */}
+            <div className="form-group">
+              <label className="form-label">Supervisor Name *</label>
+              <input
+                type="text"
+                value={dispatchInfo.supervisorName}
+                onChange={(e) => handleDispatchInfoChange('supervisorName', e.target.value)}
+                className="input-field bg-gray-100"
+                placeholder="Auto-populated"
+                readOnly
+              />
+            </div>
+
             {/* Thickness */}
             <div className="form-group">
               <label className="form-label">Thickness (mm) *</label>
@@ -1134,9 +1253,8 @@ const SlabEntry = () => {
                 onChange={(e) => handleDispatchInfoChange('measurementUnit', e.target.value as MeasurementUnit)}
                 className="input-field"
               >
-                <option value="mm">Millimeters (mm)</option>
-                <option value="cm">Centimeters (cm)</option>
                 <option value="inches">Inches</option>
+                <option value="cm">Centimeters (cm)</option>
               </select>
             </div>
           </div>
@@ -1172,6 +1290,33 @@ const SlabEntry = () => {
                   className="input-field w-16 text-center font-semibold"
                   placeholder="1"
                 />
+                {/* Direction Toggle Button */}
+                <button
+                  type="button"
+                  onClick={() => setSlabNumberDirection(prev => prev === 'up' ? 'down' : 'up')}
+                  className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
+                    slabNumberDirection === 'up' 
+                      ? 'bg-green-100 text-green-700 hover:bg-green-200' 
+                      : 'bg-red-100 text-red-700 hover:bg-red-200'
+                  }`}
+                  title={`Click to toggle direction. Currently: ${slabNumberDirection === 'up' ? 'Ascending (1, 2, 3...)' : 'Descending (3, 2, 1...)'}`}
+                >
+                  {slabNumberDirection === 'up' ? (
+                    <div className="flex items-center gap-1">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 15l7-7 7 7" />
+                      </svg>
+                      <span>Up</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                      </svg>
+                      <span>Down</span>
+                    </div>
+                  )}
+                </button>
               </div>
               <div className="text-sm font-semibold text-gray-800">
                 Net Area: <span className="text-blue-600">{(slab.netArea || 0).toFixed(2)} ft²</span>
@@ -1320,15 +1465,16 @@ const SlabEntry = () => {
         <div className="card-header">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold">
-                Current Dispatch Slabs 
-                {dispatchInfo.lotNumber && <span className="text-sm text-gray-600 ml-2">({dispatchInfo.lotNumber})</span>}
-              </h3>
-              {dispatchInfo.materialName && dispatchInfo.partyName && (
-                <div className="text-sm text-gray-600 mt-1">
-                  {dispatchInfo.materialName} • {dispatchInfo.partyName} • {dispatchInfo.thickness}mm
-                </div>
-              )}
+                          <h3 className="text-lg font-semibold">
+              Current Dispatch Slabs 
+              {dispatchInfo.lotNumber && <span className="text-sm text-gray-600 ml-2">(Lot: {dispatchInfo.lotNumber})</span>}
+            </h3>
+                          {dispatchInfo.materialName && dispatchInfo.partyName && (
+              <div className="text-sm text-gray-600 mt-1">
+                {dispatchInfo.materialName} • {dispatchInfo.partyName} • {dispatchInfo.thickness}mm
+                {dispatchNumber && <span className="ml-2 text-xs">(Dispatch: {dispatchNumber})</span>}
+              </div>
+            )}
             </div>
             <div className="text-sm text-gray-600">
               Total Slabs: {currentDispatchSlabs.length}
@@ -1349,36 +1495,111 @@ const SlabEntry = () => {
                 <tr className="bg-gray-50">
                   <th className="px-4 py-2 text-left">Slab #</th>
                   <th className="px-4 py-2 text-left">Dimensions ({dispatchInfo.measurementUnit})</th>
-                  <th className="px-4 py-2 text-left">Gross Area</th>
-                  <th className="px-4 py-2 text-left">Deductions</th>
+                  <th className="px-4 py-2 text-left">Deductions ({dispatchInfo.measurementUnit})</th>
                   <th className="px-4 py-2 text-left">Net Area</th>
                   <th className="px-4 py-2 text-left">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {currentDispatchSlabs.map((savedSlab) => (
+                {[...currentDispatchSlabs]
+                  .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+                  .map((savedSlab) => (
                   <tr key={savedSlab.id} className="border-t">
                     <td className="px-4 py-2 font-medium">{savedSlab.slabNumber}</td>
                     <td className="px-4 py-2">
-                      {savedSlab.length} × {savedSlab.height}
-                    </td>
-                    <td className="px-4 py-2 text-blue-600">
-                      {(savedSlab.grossArea || 0).toFixed(2)} ft²
+                      {editingSlabId === savedSlab.id ? (
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={editingValues.length || ''}
+                            onChange={(e) => handleEditingValueChange('length', parseFloat(e.target.value) || 0)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                saveEditingDimensions();
+                              } else if (e.key === 'Escape') {
+                                cancelEditingDimensions();
+                              }
+                            }}
+                            className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="Length"
+                            autoFocus
+                          />
+                          <span className="text-gray-500">×</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={editingValues.height || ''}
+                            onChange={(e) => handleEditingValueChange('height', parseFloat(e.target.value) || 0)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                saveEditingDimensions();
+                              } else if (e.key === 'Escape') {
+                                cancelEditingDimensions();
+                              }
+                            }}
+                            className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="Height"
+                          />
+                        </div>
+                      ) : (
+                        <div 
+                          className="cursor-pointer hover:bg-blue-50 px-2 py-1 rounded"
+                          onClick={() => startEditingDimensions(savedSlab)}
+                          title="Click to edit dimensions"
+                        >
+                          {savedSlab.length} × {savedSlab.height}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-2 text-orange-600">
-                      {(savedSlab.totalDeductionArea || 0).toFixed(2)} ft²
+                      {savedSlab.cornerDeductions && savedSlab.cornerDeductions.length > 0
+                        ? savedSlab.cornerDeductions
+                            .filter(corner => corner.length > 0 || corner.height > 0)
+                            .map((corner, index) => `${corner.length}×${corner.height}`)
+                            .join(', ') || 'None'
+                        : 'None'
+                      }
                     </td>
                     <td className="px-4 py-2 font-semibold text-green-600">
                       {(savedSlab.netArea || 0).toFixed(2)} ft²
                     </td>
                     <td className="px-4 py-2">
-                      <button
-                        onClick={() => deleteSlab(savedSlab.id)}
-                        className="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700 transition-colors"
-                        title="Delete slab"
-                      >
-                        Delete
-                      </button>
+                      {editingSlabId === savedSlab.id ? (
+                        <div className="flex space-x-1">
+                          <button
+                            onClick={saveEditingDimensions}
+                            className="bg-green-600 text-white px-2 py-1 rounded text-xs hover:bg-green-700 transition-colors"
+                            title="Save changes"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={cancelEditingDimensions}
+                            className="bg-gray-500 text-white px-2 py-1 rounded text-xs hover:bg-gray-600 transition-colors"
+                            title="Cancel editing"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex space-x-1">
+                          <button
+                            onClick={() => startEditingDimensions(savedSlab)}
+                            className="bg-blue-600 text-white px-2 py-1 rounded text-xs hover:bg-blue-700 transition-colors"
+                            title="Edit dimensions"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => deleteSlab(savedSlab.id)}
+                            className="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700 transition-colors"
+                            title="Delete slab"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

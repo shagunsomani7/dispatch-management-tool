@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { SlabMeasurement } from '../../types';
 import { apiService } from '../../services/api';
 import { Link, useLocation } from 'react-router-dom';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const SlabList = () => {
   const location = useLocation();
@@ -131,6 +133,287 @@ const SlabList = () => {
   };
 
   // Group slabs by dispatch ID
+  const generateDispatchReport = async (dispatch: {
+    dispatchId: string;
+    dispatchTimestamp: Date;
+    slabs: SlabMeasurement[];
+    totalNetArea: number;
+    materialName: string;
+    lotNumber: string;
+    partyName: string;
+    supervisorName: string;
+    vehicleNumber: string;
+  }) => {
+    try {
+      // Fetch ALL slabs for this dispatch from the API to avoid pagination issues
+      console.log(`Fetching ALL slabs for dispatch ID: ${dispatch.dispatchId}`);
+      const dispatchData = await apiService.getSlabsByDispatchId(dispatch.dispatchId);
+      
+      console.log(`Found ${dispatchData.totalSlabs} total slabs for dispatch ${dispatch.dispatchId}`);
+      
+      // Use the complete slab data from API
+      const allSlabs = dispatchData.slabs;
+      const dispatchInfo = dispatchData.dispatchInfo;
+
+      const pdf = new jsPDF('landscape');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 15;
+      let yPosition = 10;
+
+      const PRIMARY_COLOR: [number, number, number] = [41, 98, 255];
+      const TEXT_COLOR_DARK = '#333333';
+      const TEXT_COLOR_LIGHT = '#FFFFFF';
+      const BORDER_COLOR: [number, number, number] = [180, 180, 180];
+      const HEADER_BG: [number, number, number] = [245, 245, 245];
+      const SEPARATOR_COLOR: [number, number, number] = [180, 180, 180];
+
+      // Helper functions
+      const formatDate = (date: Date) => {
+        const day = date.getDate().toString().padStart(2, '0');
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const year = date.getFullYear();
+        return `${day}/${month}/${year}`;
+      };
+
+      const addSpacing = (lines = 1, lineHeight = 5) => {
+        yPosition += lines * lineHeight;
+      };
+
+      const addSeparator = () => {
+        pdf.setDrawColor(SEPARATOR_COLOR[0], SEPARATOR_COLOR[1], SEPARATOR_COLOR[2]);
+        pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+        addSpacing(1);
+      };
+
+      const currentDate = new Date();
+      const formattedDate = formatDate(currentDate);
+
+      // Add Header with simplified layout
+      pdf.setFontSize(16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(PRIMARY_COLOR[0], PRIMARY_COLOR[1], PRIMARY_COLOR[2]);
+      
+      // Simple dispatch note header
+      pdf.text('DISPATCH NOTE', pageWidth / 2, yPosition, { align: 'center' });
+      addSpacing(1);
+
+      // Date
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(TEXT_COLOR_DARK);
+      pdf.text(`Date: ${formattedDate}`, pageWidth - margin, yPosition, { align: 'right' });
+      addSpacing(2);
+
+      // Add first separator
+      addSeparator();
+
+      // Add Party and Dispatch Information in a compact format
+      const col1X = margin;
+      const col2X = margin + (pageWidth - 2 * margin) / 2 + 20;
+      const infoY = yPosition;
+
+      // Billed To section with background
+      pdf.setFillColor(HEADER_BG[0], HEADER_BG[1], HEADER_BG[2]);
+      pdf.rect(col1X - 5, infoY - 5, (pageWidth - 2 * margin) / 2, 25, 'F');
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9);
+      pdf.text('BILLED TO:', col1X, infoY);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(dispatchInfo.partyName || 'N/A', col1X, infoY + 5);
+      yPosition = infoY + 12;
+
+      // Material and Vehicle Info
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('MATERIAL:', col1X, yPosition);
+      pdf.text('VEHICLE NO.:', col2X, yPosition);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(dispatchInfo.materialName || 'N/A', col1X + 70, yPosition);
+      pdf.text(dispatchInfo.vehicleNumber || 'N/A', col2X + 70, yPosition);
+      addSpacing(1);
+
+      // Lot Number and Supervisor
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('LOT NUMBER (UID):', col1X, yPosition);
+      pdf.text('SUPERVISOR:', col2X, yPosition);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(dispatchInfo.lotNumber || 'N/A', col1X + 70, yPosition);
+      pdf.text(dispatchInfo.supervisorName || 'N/A', col2X + 70, yPosition);
+      addSpacing(2);
+
+      // Add separator before table
+      addSeparator();
+
+      // Prepare enhanced table data with corner deductions
+      console.log('PDF Debug - All slabs data:', allSlabs);
+      console.log('PDF Debug - Dispatch info:', dispatchInfo);
+      
+      // Extract and normalize slab data for both table and totals
+      const slabsWithAreas = allSlabs.map(slab => {
+        console.log('PDF Debug - Processing slab:', slab);
+        
+        const slabNumber = slab.slabNumber || 0;
+        const length = slab.length || 0;
+        const height = slab.height || 0;
+        const grossArea = slab.grossArea || 0;
+        const totalDeductionArea = slab.totalDeductionArea || 0;
+        const netArea = slab.netArea || 0;
+        const corners = slab.cornerDeductions || [];
+        
+        console.log('PDF Debug - Extracted values:', {
+          slabNumber, length, height, grossArea, totalDeductionArea, netArea, corners
+        });
+        
+        return {
+          slabNumber,
+          length,
+          height,
+          grossArea,
+          totalDeductionArea,
+          netArea,
+          corners
+        };
+      });
+      
+      const tableData = slabsWithAreas.map(slab => {
+        // Format deduction dimensions as L×H, filter out empty corners
+        const deductionDimensions = slab.corners
+          .filter((corner: any) => corner.length > 0 || corner.height > 0)
+          .map((corner: any) => `${corner.length || 0}×${corner.height || 0}`)
+          .join(', ') || 'None';
+
+        return [
+          slab.slabNumber.toString(),
+          `${slab.length.toFixed(2)}×${slab.height.toFixed(2)}`,
+          deductionDimensions,
+          slab.netArea.toFixed(2)
+        ];
+      });
+      
+      console.log('PDF Debug - Table data:', tableData);
+      console.log('PDF Debug - slabsWithAreas for totals:', slabsWithAreas);
+
+      const totalTableWidth = 170; // Reduced width for 4 columns
+      const centeredMargin = (pageWidth - totalTableWidth) / 2;
+
+      // Add table using autoTable with enhanced columns
+      autoTable(pdf, {
+        startY: yPosition,
+        head: [[
+          'Slab #',
+          `Dimensions (${dispatchInfo.measurementUnit})`,
+          `Deductions (${dispatchInfo.measurementUnit})`,
+          `Net Area (ft²)`
+        ]],
+        body: tableData,
+        theme: 'grid',
+        headStyles: {
+          fillColor: PRIMARY_COLOR,
+          textColor: TEXT_COLOR_LIGHT,
+          fontSize: 8,
+          fontStyle: 'bold',
+          halign: 'center',
+          valign: 'middle'
+        },
+        bodyStyles: {
+          fontSize: 7.5,
+          cellPadding: 1.5,
+          halign: 'right',
+          valign: 'middle'
+        },
+        columnStyles: {
+          0: { cellWidth: 25, halign: 'center' }, // Slab #
+          1: { cellWidth: 45 }, // Dimensions (L×H)
+          2: { cellWidth: 60 }, // Deductions (L×H format)
+          3: { cellWidth: 40 }  // Net Area
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245] as [number, number, number]
+        },
+        margin: { top: yPosition, bottom: 20, left: centeredMargin },
+        pageBreak: 'auto',
+        showFoot: 'lastPage',
+        tableWidth: totalTableWidth,
+        styles: {
+          overflow: 'linebreak',
+          cellPadding: 1.5,
+          lineWidth: 0.5,
+          lineColor: BORDER_COLOR
+        },
+        didDrawPage: function(data: any) {
+          if (data.pageCount > 1) {
+            const pageNumber = data.pageNumber || 1;
+            const totalPages = data.pageCount || 1;
+            pdf.setFontSize(8);
+            pdf.text(
+              `Page ${pageNumber} of ${totalPages}`,
+              pageWidth - margin,
+              pageHeight - 10,
+              { align: 'right' }
+            );
+          }
+        }
+      });
+
+      // Get the final Y position after the table
+      const finalY = (pdf as any).lastAutoTable.finalY + 15;
+
+      // Add totals with simplified layout
+      const totalNet = slabsWithAreas.reduce((sum, slab) => sum + (slab.netArea || 0), 0);
+      
+      console.log('PDF Debug - Calculated totals:');
+      console.log('totalNet:', totalNet);
+      console.log('PDF Debug - Individual slab values for totals:');
+      slabsWithAreas.forEach((slab, index) => {
+        console.log(`Slab ${index + 1} totals contribution:`, {
+          netArea: slab.netArea
+        });
+      });
+
+      const totalsXLabel = pageWidth - margin - 180;
+      const totalsXValue = pageWidth - margin - 5;
+
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('Total Slabs Dispatched:', totalsXLabel, finalY);
+      pdf.text((slabsWithAreas?.length || 0).toString(), totalsXValue, finalY, { align: 'right' });
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`TOTAL NET DISPATCHED AREA (ft²):`, totalsXLabel, finalY + 10);
+      pdf.text(totalNet.toFixed(2), totalsXValue, finalY + 10, { align: 'right' });
+
+      // Add notes and signature
+      const notesY = finalY + 45; // Reduced spacing since we have fewer totals
+      const signatureX = pageWidth - margin - 80;
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9);
+      pdf.text('Notes:', margin, notesY);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('1. All goods received in good condition.', margin, notesY + 5);
+      pdf.text('2. Please verify measurements upon receipt.', margin, notesY + 10);
+
+      // Add signature box
+      pdf.setDrawColor(BORDER_COLOR[0], BORDER_COLOR[1], BORDER_COLOR[2]);
+      pdf.line(signatureX, notesY + 15, pageWidth - margin, notesY + 15);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Authorized Signature', signatureX, notesY + 25);
+
+      // Generate filename
+      const timestamp = new Date(dispatchInfo.dispatchTimestamp);
+      const fileName = `Dispatch_Note_${dispatchInfo.partyName || 'UnknownParty'}_${dispatchInfo.lotNumber || 'NoLot'}_${timestamp.toISOString().split('T')[0]}.pdf`;
+      
+      pdf.save(fileName);
+      
+      console.log(`PDF report generated: ${fileName} with ${dispatchData.totalSlabs} slabs`);
+      alert(`PDF report generated successfully with ${dispatchData.totalSlabs} slabs!`);
+    } catch (error) {
+      console.error('Error generating dispatch report:', error);
+      alert('Error generating report. Please try again.');
+    }
+  };
+
   const groupSlabsByDispatch = () => {
     const grouped = slabs.reduce((acc, slab) => {
       const dispatchId = slab.dispatchId || 'UNKNOWN';
@@ -364,6 +647,12 @@ const SlabList = () => {
                             <div className="text-lg font-semibold text-blue-900">
                               {dispatch.slabs.length} slabs • {dispatch.totalNetArea.toFixed(2)} ft²
                             </div>
+                            <button
+                              onClick={() => generateDispatchReport(dispatch)}
+                              className="mt-2 bg-green-600 text-white text-sm font-medium py-1 px-3 rounded hover:bg-green-700 transition-colors"
+                            >
+                              Generate Report
+                            </button>
                           </div>
                         </div>
                       </div>

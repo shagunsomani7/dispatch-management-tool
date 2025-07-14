@@ -30,7 +30,7 @@ export interface CornerDeduction {
   area: number;
 }
 
-export type MeasurementUnit = 'inches' | 'cm' | 'mm';
+export type MeasurementUnit = 'inches' | 'cm';
 
 export interface DispatchBatch {
   id: string;
