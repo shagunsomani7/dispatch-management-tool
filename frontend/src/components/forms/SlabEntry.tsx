@@ -18,6 +18,241 @@ interface SlabFormData {
   timestamp: Date;
 }
 
+// --- Enhanced SmartVehicleInput Component ---
+interface SmartVehicleInputProps {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}
+
+// Regex for full valid formats
+const RTO_REGEX = /^[A-Z]{2}-\d{2}-[A-Z]{1,2}-\d{4}$/; // MH-12-AB-1234, DL-01-C-0001
+const BH_REGEX = /^\d{2}-BH-\d{4}-[A-Z]{2}$/; // 21-BH-1234-AA
+
+// Regex for partial valid input (for typing)
+const PARTIAL_RTO = /^[A-Z]{0,2}(-\d{0,2}(-[A-Z]{0,2}(-\d{0,4})?)?)?$/;
+const PARTIAL_BH = /^\d{0,2}(-BH(-\d{0,4}(-[A-Z]{0,2})?)?)?$/;
+
+function formatVehicleInput(raw: string): string {
+  // Remove all non-alphanumeric, make uppercase
+  let input = raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  // Try to format as RTO or BH
+  if (input.startsWith('BH')) input = '00' + input; // Edge case: user types BH first
+  if (/^\d{0,2}BH/.test(input)) {
+    // BH format
+    let year = input.slice(0, 2);
+    let bh = input.slice(2, 4);
+    let num = input.slice(4, 8);
+    let alpha = input.slice(8, 10);
+    let out = year;
+    if (bh) out += '-' + bh;
+    if (num) out += '-' + num;
+    if (alpha) out += '-' + alpha;
+    return out;
+  } else {
+    // RTO format
+    let state = input.slice(0, 2);
+    let code = input.slice(2, 4);
+    let series = input.slice(4, 6);
+    let num = input.slice(6, 10);
+    let out = state;
+    if (code) out += '-' + code;
+    if (series) out += '-' + series;
+    if (num) out += '-' + num;
+    return out;
+  }
+}
+
+function isPartialValid(input: string) {
+  return PARTIAL_RTO.test(input) || PARTIAL_BH.test(input);
+}
+
+function isFullValid(input: string) {
+  return RTO_REGEX.test(input) || BH_REGEX.test(input);
+}
+
+const RECENT_KEY = 'recent_vehicle_numbers';
+
+const SmartVehicleInput: React.FC<SmartVehicleInputProps> = ({ value, onChange, disabled }) => {
+  const [input, setInput] = useState(value || '');
+  const [error, setError] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [recent, setRecent] = useState<string[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLUListElement>(null);
+  const [highlighted, setHighlighted] = useState(-1);
+  const [touched, setTouched] = useState(false);
+
+  useEffect(() => {
+    setInput(value || '');
+  }, [value]);
+
+  useEffect(() => {
+    const stored = localStorage.getItem(RECENT_KEY);
+    if (stored) {
+      setRecent(JSON.parse(stored));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (showDropdown && dropdownRef.current) {
+      const el = dropdownRef.current.querySelector('.highlighted');
+      if (el) (el as HTMLElement).scrollIntoView({ block: 'nearest' });
+    }
+  }, [highlighted, showDropdown]);
+
+  const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let formatted = formatVehicleInput(e.target.value);
+    setInput(formatted);
+    onChange(formatted);
+    setTouched(true);
+    setShowDropdown(true);
+    // No error while typing unless it's not a partial match
+    if (formatted === '' || isPartialValid(formatted)) {
+      setError('');
+    } else {
+      setError('Invalid format');
+    }
+  };
+
+  const handleBlur = () => {
+    setTimeout(() => setShowDropdown(false), 150);
+    if (input && !isFullValid(input)) {
+      setError('Invalid vehicle number format');
+    } else {
+      setError('');
+    }
+  };
+
+  const handleFocus = () => {
+    setShowDropdown(true);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showDropdown) return;
+    if (e.key === 'ArrowDown') {
+      setHighlighted((prev) => Math.min(prev + 1, recent.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      setHighlighted((prev) => Math.max(prev - 1, 0));
+    } else if (e.key === 'Enter' && highlighted >= 0 && recent[highlighted]) {
+      setInput(recent[highlighted]);
+      onChange(recent[highlighted]);
+      setShowDropdown(false);
+      setHighlighted(-1);
+    }
+  };
+
+  const handleSelect = (val: string) => {
+    setInput(val);
+    onChange(val);
+    setShowDropdown(false);
+    setHighlighted(-1);
+  };
+
+  // Update recent list on valid submit
+  useEffect(() => {
+    if (isFullValid(input)) {
+      let updated = [input, ...recent.filter((v) => v !== input)];
+      if (updated.length > 5) updated = updated.slice(0, 5);
+      setRecent(updated);
+      localStorage.setItem(RECENT_KEY, JSON.stringify(updated));
+    }
+    // eslint-disable-next-line
+  }, [input]);
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        type="text"
+        value={input}
+        onChange={handleInput}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        onKeyDown={handleKeyDown}
+        className={`input-field w-full ${error ? 'border-red-500' : ''}`}
+        placeholder="e.g. MH-12-AB-1234 or 21-BH-1234-AA"
+        maxLength={14}
+        autoComplete="off"
+        disabled={disabled}
+        style={{ textTransform: 'uppercase' }}
+        aria-autocomplete="list"
+        aria-haspopup="listbox"
+        aria-expanded={showDropdown}
+        aria-controls="vehicle-dropdown"
+      />
+      {error && touched && (
+        <div className="text-xs text-red-600 mt-1">{error}</div>
+      )}
+      {showDropdown && recent.length > 0 && (
+        <ul
+          ref={dropdownRef}
+          id="vehicle-dropdown"
+          role="listbox"
+          className="absolute z-10 left-0 right-0 bg-white border border-gray-200 rounded shadow mt-1 max-h-52 overflow-y-auto"
+        >
+          {recent.map((v, i) => (
+            <li
+              key={v}
+              role="option"
+              aria-selected={highlighted === i}
+              className={`px-4 py-2 cursor-pointer hover:bg-primary-100 ${highlighted === i ? 'highlighted bg-primary-100' : ''}`}
+              onMouseDown={() => handleSelect(v)}
+              onMouseEnter={() => setHighlighted(i)}
+            >
+              {v}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+// --- Reusable Modal Component ---
+interface ModalProps {
+  open: boolean;
+  type?: 'success' | 'error' | 'confirm';
+  title?: string;
+  content?: React.ReactNode;
+  actions?: React.ReactNode;
+  onClose: () => void;
+}
+const Modal: React.FC<ModalProps> = ({ open, type = 'confirm', title, content, actions, onClose }) => {
+  if (!open) return null;
+  let icon = null;
+  let color = '';
+  if (type === 'success') {
+    icon = <span className="text-green-600 text-2xl mr-2">✔️</span>;
+    color = 'text-green-700';
+  } else if (type === 'error') {
+    icon = <span className="text-red-600 text-2xl mr-2">❌</span>;
+    color = 'text-red-700';
+  } else {
+    icon = <span className="text-blue-600 text-2xl mr-2">ℹ️</span>;
+    color = 'text-blue-700';
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+      <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6 relative">
+        <button
+          className="absolute top-3 right-3 text-gray-500 hover:text-gray-800 text-xl"
+          onClick={onClose}
+          aria-label="Close"
+        >
+          ×
+        </button>
+        <div className={`flex items-center mb-4 ${color}`}>{icon}{title && <h3 className="text-xl font-bold ml-1">{title}</h3>}</div>
+        <div className="mb-4">{content}</div>
+        <div className="flex justify-end gap-2">{actions}</div>
+      </div>
+    </div>
+  );
+};
+
+// Draft key for localStorage
+const SLAB_DRAFT_KEY = 'slab_entry_draft_v1';
+
 const SlabEntry = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -83,6 +318,11 @@ const SlabEntry = () => {
   const [newParty, setNewParty] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const inputRef = useRef(null);
+
+  // Modal state
+  const [modal, setModal] = useState<{ open: boolean; type?: 'success' | 'error' | 'confirm'; title?: string; content?: React.ReactNode; actions?: React.ReactNode }>({ open: false });
+  // Save Draft state
+  const [draftLoaded, setDraftLoaded] = useState(false);
 
   // Load initial data and generate initial lot number
   useEffect(() => {
@@ -343,16 +583,25 @@ const SlabEntry = () => {
 
   const copyPrevious = () => {
     if (currentDispatchSlabs.length === 0) {
-      alert('No previous slabs to copy from');
+      setModal({
+        open: true,
+        type: 'error',
+        title: 'No Previous Slab',
+        content: 'No previous slabs to copy from.',
+        actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+      });
       return;
     }
-
-    // Get the latest slab (highest slab number)
-    const latestSlab = currentDispatchSlabs.reduce((latest, current) => 
-      current.slabNumber > latest.slabNumber ? current : latest
-    );
-
-    copySlab(latestSlab);
+    // Use the most recently added slab (last in array)
+    const lastSlab = currentDispatchSlabs[currentDispatchSlabs.length - 1];
+    copySlab(lastSlab);
+    setModal({
+      open: true,
+      type: 'success',
+      title: 'Copied Previous',
+      content: `Copied slab #${lastSlab.slabNumber} data to the form.`,
+      actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+    });
   };
 
   const addNewMaterial = async () => {
@@ -382,80 +631,109 @@ const SlabEntry = () => {
         setShowAddParty(false);
         setPartyQuery('');
       } catch (err) {
-        alert((err as Error).message || 'Failed to add party');
+        setModal({
+          open: true,
+          type: 'error',
+          title: 'Add Party Error',
+          content: (err as Error).message || 'Failed to add party',
+          actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+        });
       }
     }
   };
 
-
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validation
     if (!dispatchInfo.materialName || !dispatchInfo.lotNumber || !dispatchInfo.partyName) {
-      alert('Please fill in all required dispatch information fields');
+      setModal({
+        open: true,
+        type: 'error',
+        title: 'Missing Info',
+        content: 'Please fill in all required dispatch information fields.',
+        actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+      });
       return;
     }
-
     if (!dispatchNumber) {
-      alert('Dispatch number not generated. Please refresh the page.');
+      setModal({
+        open: true,
+        type: 'error',
+        title: 'No Dispatch Number',
+        content: 'Dispatch number not generated. Please refresh the page.',
+        actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+      });
       return;
     }
-
     if (!slab.length || !slab.height) {
-      alert('Please enter slab dimensions');
+      setModal({
+        open: true,
+        type: 'error',
+        title: 'Missing Dimensions',
+        content: 'Please enter slab dimensions.',
+        actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+      });
       return;
     }
-
-    // Check for duplicate slab numbers in current dispatch
     const existingSlab = currentDispatchSlabs.find(s => s.slabNumber === slab.slabNumber);
     if (existingSlab) {
-      alert(`Slab number ${slab.slabNumber} already exists in this dispatch. Please use a different number.`);
+      setModal({
+        open: true,
+        type: 'error',
+        title: 'Duplicate Slab Number',
+        content: `Slab number ${slab.slabNumber} already exists in this dispatch. Please use a different number.`,
+        actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+      });
       return;
     }
-
     try {
       setError(null);
-
-      // Add to temporary storage with unique ID
       const newSlab: SlabFormData = {
         ...slab,
         id: `temp-${Date.now()}-${slab.slabNumber}`,
         timestamp: new Date()
       };
-
       setCurrentDispatchSlabs(prev => [...prev, newSlab]);
-      
-      // Mark dispatch as started so dispatch info persists
       setIsDispatchStarted(true);
-      
-      // Show success feedback briefly
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2000);
-      
-      // Clear the form and increment slab number
       clearSlab();
-
+      clearDraft();
     } catch (error) {
-      console.error('Error adding slab:', error);
       setError(error instanceof Error ? error.message : 'Failed to add slab');
+      setModal({
+        open: true,
+        type: 'error',
+        title: 'Add Slab Error',
+        content: error instanceof Error ? error.message : 'Failed to add slab',
+        actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+      });
     }
   };
 
   const deleteSlab = (slabId: string) => {
     const slabToDelete = currentDispatchSlabs.find(s => s.id === slabId);
-    if (slabToDelete && window.confirm(`Are you sure you want to delete slab #${slabToDelete.slabNumber}?`)) {
-      const updatedSlabs = currentDispatchSlabs.filter(s => s.id !== slabId);
-      setCurrentDispatchSlabs(updatedSlabs);
-      
-      // If no slabs left, reset dispatch started flag
-      if (updatedSlabs.length === 0) {
-        setIsDispatchStarted(false);
-      }
-      
-      alert(`Slab #${slabToDelete.slabNumber} has been deleted.`);
-    }
+    if (!slabToDelete) return;
+    setModal({
+      open: true,
+      type: 'confirm',
+      title: 'Delete Slab?',
+      content: `Are you sure you want to delete slab #${slabToDelete.slabNumber}?`,
+      actions: [
+        <button key="yes" className="btn-danger" onClick={() => {
+          const updatedSlabs = currentDispatchSlabs.filter(s => s.id !== slabId);
+          setCurrentDispatchSlabs(updatedSlabs);
+          if (updatedSlabs.length === 0) setIsDispatchStarted(false);
+          setModal({
+            open: true,
+            type: 'success',
+            title: 'Slab Deleted',
+            content: `Slab #${slabToDelete.slabNumber} has been deleted.`,
+            actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+          });
+        }}>Yes</button>,
+        <button key="no" className="btn-secondary" onClick={() => setModal({ open: false })}>No</button>
+      ]
+    });
   };
 
   // Functions for inline editing
@@ -565,40 +843,14 @@ const SlabEntry = () => {
     setSlabNumberInput('1');
   };
 
-  // Generate Report - Save all slabs to database and create PDF
-  const generateReport = async () => {
-    if (currentDispatchSlabs.length === 0) {
-      alert('Please add at least one slab before generating report');
-      return;
-    }
-
-    if (!dispatchInfo.materialName || !dispatchInfo.lotNumber || !dispatchInfo.partyName) {
-      alert('Please fill in all required dispatch information fields');
-      return;
-    }
-
-    // Prompt user to confirm report generation
-    const confirmGenerate = window.confirm(
-      `Generate dispatch report for ${currentDispatchSlabs.length} slabs?\n\nThis will:\n• Save all slabs to database\n• Generate PDF report\n• Clear current dispatch\n\nProceed?`
-    );
-    if (!confirmGenerate) return;
-
-    // Confirm vehicle number if empty
-    if (!dispatchInfo.dispatchVehicleNumber) {
-      const confirmWithoutVehicle = window.confirm(
-        'Vehicle number is not specified. Do you want to generate the report without vehicle number?'
-      );
-      if (!confirmWithoutVehicle) return;
-    }
-
+  // Refactor generateReport to use a separate function for the actual report logic
+  const handleGenerateReport = async () => {
     try {
       setLoading(true);
       setError(null);
-
       // Use the auto-generated dispatch number as the unique dispatch ID
       const dispatchId = dispatchNumber;
       const dispatchTimestamp = new Date();
-
       // Save all slabs to database
       const savedSlabs: any[] = [];
       for (const tempSlab of currentDispatchSlabs) {
@@ -620,23 +872,18 @@ const SlabEntry = () => {
           dispatchId: dispatchId, // Auto-generated dispatch number
           dispatchTimestamp: dispatchTimestamp
         };
-
         const savedSlab = await apiService.createSlab(slabData);
         savedSlabs.push(savedSlab);
       }
-
       // Generate PDF report
-      console.log('Generate Report Debug - Saved slabs before PDF:', savedSlabs);
       const pdfResult = await generatePDF(savedSlabs);
       if (!pdfResult) {
         throw new Error('Failed to generate PDF');
       }
       const { fileName, pdfBlob } = pdfResult;
-
       // Clear the dispatch after successful generation and start new dispatch with new lot number
       setCurrentDispatchSlabs([]);
       setIsDispatchStarted(false);
-      
       // Generate new dispatch number for next dispatch
       const newDispatchNumber = generateDispatchNumber();
       setDispatchNumber(newDispatchNumber);
@@ -647,88 +894,129 @@ const SlabEntry = () => {
         dispatchVehicleNumber: '',
         partyName: ''
       }));
-      
       clearSlab();
-      
+      clearDraft();
       // Enhanced sharing function for mobile PDF sharing
       const sharePDFReport = async (pdfBlob: Blob, fileName: string) => {
-        // Check if we can share files (mobile devices with modern browsers)
         if (navigator.share) {
           try {
-            // Create File object from PDF blob for native sharing
-            const pdfFile = new File([pdfBlob], fileName, { 
+            const pdfFile = new File([pdfBlob], fileName, {
               type: 'application/pdf',
               lastModified: Date.now()
             });
-            
-            // Check if we can share the PDF file
             const shareDataWithFile = {
               files: [pdfFile],
               title: 'Samdani Group - Dispatch Report',
               text: `Dispatch Report - ${dispatchInfo.partyName} - ${dispatchInfo.lotNumber}`
             };
-            
-            // Try to share the PDF file directly
             if (navigator.canShare && navigator.canShare(shareDataWithFile)) {
               await navigator.share(shareDataWithFile);
               return;
             } else {
-              // Fallback: try sharing just the file without text
               await navigator.share({ files: [pdfFile] });
               return;
             }
           } catch (error) {
-            console.log('PDF file sharing failed:', error);
-            
             // Fallback to text sharing if file sharing fails
             try {
               const shareText = `Samdani Group - Dispatch Report\n\nParty: ${dispatchInfo.partyName}\nLot Number: ${dispatchInfo.lotNumber}\nMaterial: ${dispatchInfo.materialName}\nTotal Slabs: ${savedSlabs.length}\nTotal Net Area: ${savedSlabs.reduce((sum: number, s: any) => sum + (s.netArea || 0), 0).toFixed(2)} ft²\n\nGenerated on: ${new Date().toLocaleDateString()}\n\nNote: PDF file "${fileName}" has been downloaded to your device.`;
-              
-            await navigator.share({
-              title: 'Samdani Group - Dispatch Report',
+              await navigator.share({
+                title: 'Samdani Group - Dispatch Report',
                 text: shareText
               });
               return;
             } catch (textError) {
-              if (textError instanceof Error && textError.name !== 'AbortError') {
-                console.log('Text sharing also failed:', textError);
-              }
+              // Ignore
             }
           }
         }
-        
         // Fallback for browsers without native sharing
         const shareText = `Samdani Group - Dispatch Report\n\nParty: ${dispatchInfo.partyName}\nLot Number: ${dispatchInfo.lotNumber}\nMaterial: ${dispatchInfo.materialName}\nTotal Slabs: ${savedSlabs.length}\nTotal Net Area: ${savedSlabs.reduce((sum: number, s: any) => sum + (s.netArea || 0), 0).toFixed(2)} ft²\n\nGenerated on: ${new Date().toLocaleDateString()}`;
-        
         if (navigator.clipboard) {
           try {
             await navigator.clipboard.writeText(shareText + `\n\nNote: PDF file "${fileName}" has been downloaded to your device.`);
-            alert('✅ Report details copied to clipboard!\n\nPDF file has been downloaded. You can now paste the report information in WhatsApp, Email, or any other app.');
+            setModal({
+              open: true,
+              type: 'success',
+              title: 'Copied to Clipboard',
+              content: 'Report details copied to clipboard! You can now paste the report information in WhatsApp, Email, or any other app.',
+              actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+            });
             return;
           } catch (clipboardError) {
-            console.log('Clipboard access failed:', clipboardError);
+            // Ignore
           }
         }
-        
-        // Final fallback - show text in alert
-        alert(`📋 Report Generated Successfully!\n\nPDF file "${fileName}" has been downloaded.\n\n${shareText}\n\nNote: Please manually share the downloaded PDF file from your device's file manager or downloads folder.`);
+        setModal({
+          open: true,
+          type: 'success',
+          title: 'Report Generated',
+          content: <div><div className="flex justify-center mb-2"><span className="text-green-600 text-4xl">✔️</span></div><div>PDF file "{fileName}" has been downloaded.<br/>Please manually share the downloaded PDF file from your device's file manager or downloads folder.</div></div>,
+          actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+        });
       };
-
-      // Show success message with enhanced share option
-      const shareReport = window.confirm(
-        `✅ Report generated successfully!\n\n${savedSlabs.length} slabs saved to database.\nPDF downloaded as: ${fileName}\n\nWould you like to share this PDF file?\n\n📱 Mobile: Share actual PDF file to WhatsApp, Email, and all apps\n💻 Desktop: Copy report information`
-      );
-      
-      if (shareReport) {
-        await sharePDFReport(pdfBlob, fileName);
-      }
-
+      // Show concise, visually clear success modal
+      setModal({
+        open: true,
+        type: 'success',
+        title: 'Report Generated!',
+        content: <div className="flex flex-col items-center"><span className="text-green-600 text-5xl mb-2">✔️</span><div className="text-lg font-semibold mb-1">Your dispatch report has been saved and downloaded.</div><div className="text-sm text-gray-700 mb-2">You can now share the PDF file or close this message.</div></div>,
+        actions: [
+          <button key="share" className="btn-primary" onClick={async () => {
+            setModal({ open: false });
+            await sharePDFReport(pdfBlob, fileName);
+          }}>Share</button>,
+          <button key="close" className="btn-secondary" onClick={() => setModal({ open: false })}>Close</button>
+        ]
+      });
     } catch (error) {
-      console.error('Error generating report:', error);
       setError(error instanceof Error ? error.message : 'Failed to generate report');
+      setModal({
+        open: true,
+        type: 'error',
+        title: 'Report Error',
+        content: error instanceof Error ? error.message : 'Failed to generate report',
+        actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+      });
     } finally {
       setLoading(false);
     }
+  };
+
+  const generateReport = async () => {
+    if (currentDispatchSlabs.length === 0) {
+      setModal({
+        open: true,
+        type: 'error',
+        title: 'No Slabs',
+        content: 'Please add at least one slab before generating report.',
+        actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+      });
+      return;
+    }
+    if (!dispatchInfo.materialName || !dispatchInfo.lotNumber || !dispatchInfo.partyName) {
+      setModal({
+        open: true,
+        type: 'error',
+        title: 'Missing Info',
+        content: 'Please fill in all required dispatch information fields.',
+        actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+      });
+      return;
+    }
+    setModal({
+      open: true,
+      type: 'confirm',
+      title: 'Generate Report?',
+      content: `Generate dispatch report for ${currentDispatchSlabs.length} slabs? This will save all slabs to database and generate PDF report. Proceed?`,
+      actions: [
+        <button key="yes" className="btn-primary" onClick={async () => {
+          setModal({ open: false });
+          await handleGenerateReport();
+        }}>Yes</button>,
+        <button key="no" className="btn-secondary" onClick={() => setModal({ open: false })}>No</button>
+      ]
+    });
   };
 
   // Generate PDF function - Professional Business Format
@@ -996,8 +1284,76 @@ const SlabEntry = () => {
     return { fileName, pdfBlob };
   };
 
+  // --- Save Draft logic ---
+  // Save current form state to localStorage
+  const saveDraft = () => {
+    const draft = {
+      dispatchInfo,
+      slab,
+      currentDispatchSlabs,
+      dispatchNumber,
+      isDispatchStarted
+    };
+    localStorage.setItem(SLAB_DRAFT_KEY, JSON.stringify(draft));
+    setModal({
+      open: true,
+      type: 'success',
+      title: 'Draft Saved',
+      content: 'Your draft has been saved locally. You can resume later.',
+      actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+    });
+  };
+  // Load draft on mount
+  useEffect(() => {
+    if (!draftLoaded) {
+      const draftStr = localStorage.getItem(SLAB_DRAFT_KEY);
+      if (draftStr) {
+        setModal({
+          open: true,
+          type: 'confirm',
+          title: 'Load Draft?',
+          content: 'A saved draft was found. Would you like to load it?',
+          actions: [
+            <button key="load" className="btn-primary" onClick={() => {
+              try {
+                const draft = JSON.parse(localStorage.getItem(SLAB_DRAFT_KEY) || '{}');
+                if (draft.dispatchInfo) setDispatchInfo(draft.dispatchInfo);
+                if (draft.slab) setSlab(draft.slab);
+                if (draft.currentDispatchSlabs) setCurrentDispatchSlabs(draft.currentDispatchSlabs);
+                if (draft.dispatchNumber) setDispatchNumber(draft.dispatchNumber);
+                if (draft.isDispatchStarted) setIsDispatchStarted(draft.isDispatchStarted);
+                setDraftLoaded(true);
+                setModal({ open: false });
+              } catch {
+                setModal({
+                  open: true,
+                  type: 'error',
+                  title: 'Draft Error',
+                  content: 'Failed to load draft. It may be corrupted.',
+                  actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+                });
+              }
+            }}>Load</button>,
+            <button key="discard" className="btn-secondary" onClick={() => {
+              localStorage.removeItem(SLAB_DRAFT_KEY);
+              setDraftLoaded(true);
+              setModal({ open: false });
+            }}>Discard</button>
+          ]
+        });
+      } else {
+        setDraftLoaded(true);
+      }
+    }
+  }, [draftLoaded]);
+  // Clear draft on successful submit or explicit discard
+  const clearDraft = () => {
+    localStorage.removeItem(SLAB_DRAFT_KEY);
+  };
+
   return (
     <div className="max-w-7xl mx-auto py-8 space-y-6">
+      <Modal {...modal} onClose={() => setModal({ open: false })} />
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Slab Entry</h1>
@@ -1175,12 +1531,10 @@ const SlabEntry = () => {
             {/* Vehicle Number */}
             <div className="form-group">
               <label className="form-label">Vehicle Number</label>
-              <input
-                type="text"
+              <SmartVehicleInput
                 value={dispatchInfo.dispatchVehicleNumber}
-                onChange={(e) => handleDispatchInfoChange('dispatchVehicleNumber', e.target.value)}
-                className="input-field"
-                placeholder="Enter vehicle number"
+                onChange={(val) => handleDispatchInfoChange('dispatchVehicleNumber', val)}
+                disabled={isDispatchStarted}
               />
             </div>
 
@@ -1443,7 +1797,7 @@ const SlabEntry = () => {
                   type="button"
                   onClick={copyPrevious}
                   className="btn-secondary w-full xs:w-auto"
-                  title="Copy from latest slab"
+                  title="Copy from previous slab"
                 >
                   Copy Previous
                 </button>
@@ -1608,41 +1962,36 @@ const SlabEntry = () => {
           </div>
         )}
       </div>
-
-      {/* Generate Report Button */}
       {currentDispatchSlabs.length > 0 && (
-        <div className="card bg-green-50">
-          <div className="text-center">
-            <h3 className="text-lg font-semibold text-green-900 mb-4">Ready to Generate Report</h3>
-            <div className="mb-4">
-              <div className="text-sm text-green-700">Total Slabs: {currentDispatchSlabs.length}</div>
-              <div className="text-sm text-green-700">
-                Total Net Area: {currentDispatchSlabs.reduce((sum, s) => sum + (s.netArea || 0), 0).toFixed(2)} ft²
-              </div>
-            </div>
-            <button
-              onClick={generateReport}
-              disabled={loading}
-              className="bg-green-600 text-white font-medium text-lg px-8 py-3 rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center space-x-2 mx-auto"
-            >
-              {loading ? (
-                <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                  <span>Generating Report...</span>
-                </>
-              ) : (
-                <>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                  </svg>
-                  <span>Generate Report</span>
-                </>
-              )}
-            </button>
-            <div className="text-xs text-green-600 mt-2">
-              This will save all slabs to database and generate PDF report
-            </div>
-          </div>
+        <div className="mt-8 flex flex-col sm:flex-row justify-end gap-2">
+          <button
+            type="button"
+            onClick={saveDraft}
+            className="btn-secondary w-full sm:w-auto"
+            title="Save draft to local storage"
+          >
+            Save Draft
+          </button>
+          <button
+            type="button"
+            onClick={generateReport}
+            disabled={loading || currentDispatchSlabs.length === 0}
+            className="bg-green-600 text-white font-medium text-lg px-8 py-3 rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center space-x-2 mx-auto"
+          >
+            {loading ? (
+              <>
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                <span>Generating Report...</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                <span>Generate Report</span>
+              </>
+            )}
+          </button>
         </div>
       )}
     </div>

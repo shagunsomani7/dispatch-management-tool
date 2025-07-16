@@ -173,22 +173,43 @@ const Reports = () => {
     setLoading(true);
     try {
       if (selectedReport === 'daily') {
-        const today = new Date().toISOString().split('T')[0];
-        const data = await apiService.getDailyReport(today);
-        
+        const today = new Date();
+        const todayStr = today.toISOString().split('T')[0];
+        const startRange = new Date(today);
+        startRange.setDate(today.getDate() - 15);
+        const endRange = new Date(today);
+        endRange.setDate(today.getDate() + 15);
+        // Fetch slabs for a wide date range
+        const slabsData = await apiService.getSlabs({
+          startDate: startRange.toISOString().split('T')[0],
+          endDate: endRange.toISOString().split('T')[0],
+          limit: 1000
+        });
+        // Filter slabs by dispatchTimestamp (date only, ignore time)
+        const slabsToday = slabsData.slabs.filter((slab: SlabMeasurement) => {
+          if (!slab.dispatchTimestamp) return false;
+          const dispatchDate = new Date(slab.dispatchTimestamp);
+          return (
+            dispatchDate.getFullYear() === today.getFullYear() &&
+            dispatchDate.getMonth() === today.getMonth() &&
+            dispatchDate.getDate() === today.getDate()
+          );
+        });
         // Process slabs into dispatch summaries
-        const dispatches = groupSlabsByDispatch(data.slabs);
-        
+        const dispatches = groupSlabsByDispatch(slabsToday);
         // Update summary to include dispatch count
         const enhancedData = {
-          ...data,
           summary: {
-            ...data.summary,
+            date: todayStr,
+            totalSlabs: slabsToday.length,
+            totalArea: slabsToday.reduce((sum, s) => sum + s.netArea, 0),
+            parties: [...new Set(slabsToday.map(s => s.partyName))].length,
+            supervisors: [...new Set(slabsToday.map(s => s.supervisorName))].length,
             totalDispatches: dispatches.length
           },
+          slabs: slabsToday,
           dispatches
         };
-        
         setDailyReportData(enhancedData);
         setReportData(null); // Clear analytics data when switching to daily
       } else {

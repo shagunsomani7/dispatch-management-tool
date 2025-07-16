@@ -17,6 +17,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobile = false, onClose }) => {
   if (user?.role === 'admin') {
     menuItems = [
       { path: '/', label: 'Dashboard', icon: '📊' },
+      { path: '/trucks', label: 'Truck Dashboard', icon: '🚚' },
       { path: '/entry', label: 'Slab Entry', icon: '📝' },
       { path: '/slabs', label: 'View Database', icon: '🗄️' },
       { path: '/reports', label: 'Reports', icon: '📈' },
