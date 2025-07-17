@@ -10,6 +10,7 @@ interface DashboardStats {
     totalArea: number;
     parties: number;
     supervisors: number;
+    totalDispatches: number;
   };
   recentSlabs: SlabMeasurement[];
   topParties: Array<{
@@ -56,17 +57,34 @@ const Dashboard = () => {
       setLoading(true);
       setError(null);
 
-      const today = new Date().toISOString().split('T')[0];
-      
-      // Fetch today's data and recent slabs in parallel
-      const [dailyReport, recentSlabs] = await Promise.all([
-        apiService.getDailyReport(today),
-        apiService.getSlabs({ limit: 50 }) // Get more slabs to group by dispatch
-      ]);
+      const today = new Date();
+      const todayStr = today.toISOString().split('T')[0];
+      const startRange = new Date(today);
+      startRange.setDate(today.getDate() - 15);
+      const endRange = new Date(today);
+      endRange.setDate(today.getDate() + 15);
+
+      // Fetch slabs for a wide date range
+      const recentSlabs = await apiService.getSlabs({
+        startDate: startRange.toISOString().split('T')[0],
+        endDate: endRange.toISOString().split('T')[0],
+        limit: 1000
+      });
+
+      // Filter slabs by dispatchTimestamp (date only, ignore time)
+      const slabsToday = recentSlabs.slabs.filter((slab: SlabMeasurement) => {
+        if (!slab.dispatchTimestamp) return false;
+        const dispatchDate = new Date(slab.dispatchTimestamp);
+        return (
+          dispatchDate.getFullYear() === today.getFullYear() &&
+          dispatchDate.getMonth() === today.getMonth() &&
+          dispatchDate.getDate() === today.getDate()
+        );
+      });
 
       // Process supervisor activity
       const supervisorMap = new Map();
-      recentSlabs.slabs.forEach(slab => {
+      slabsToday.forEach(slab => {
         const existing = supervisorMap.get(slab.supervisorName) || {
           name: slab.supervisorName,
           slabCount: 0,
@@ -81,7 +99,7 @@ const Dashboard = () => {
 
       // Process party statistics
       const partyMap = new Map();
-      recentSlabs.slabs.forEach(slab => {
+      slabsToday.forEach(slab => {
         const existing = partyMap.get(slab.partyName) || {
           name: slab.partyName,
           slabCount: 0,
@@ -92,9 +110,18 @@ const Dashboard = () => {
         partyMap.set(slab.partyName, existing);
       });
 
+      // Calculate total dispatches (unique dispatchId)
+      const totalDispatches = new Set(slabsToday.map(s => s.dispatchId)).size;
+
       setStats({
-        todayStats: dailyReport.summary,
-        recentSlabs: recentSlabs.slabs.slice(0, 5),
+        todayStats: {
+          totalSlabs: slabsToday.length,
+          totalArea: slabsToday.reduce((sum, s) => sum + s.netArea, 0),
+          parties: [...new Set(slabsToday.map(s => s.partyName))].length,
+          supervisors: [...new Set(slabsToday.map(s => s.supervisorName))].length,
+          totalDispatches
+        },
+        recentSlabs: slabsToday.slice(0, 5),
         topParties: Array.from(partyMap.values())
           .sort((a, b) => b.totalArea - a.totalArea)
           .slice(0, 3),
@@ -105,7 +132,7 @@ const Dashboard = () => {
 
       // Group slabs by dispatch and generate dispatch-wise activity
       const dispatchMap = new Map();
-      recentSlabs.slabs.forEach(slab => {
+      slabsToday.forEach(slab => {
         const existing = dispatchMap.get(slab.dispatchId) || {
           dispatchId: slab.dispatchId,
           slabs: [],
@@ -118,17 +145,14 @@ const Dashboard = () => {
           totalArea: 0,
           slabCount: 0
         };
-        
         existing.slabs.push(slab);
         existing.totalArea += slab.netArea;
         existing.slabCount++;
-        
         // Use the earliest timestamp for the dispatch
         const slabTime = new Date(slab.dispatchTimestamp || slab.timestamp);
         if (slabTime < existing.timestamp) {
           existing.timestamp = slabTime;
         }
-        
         dispatchMap.set(slab.dispatchId, existing);
       });
 
@@ -270,10 +294,10 @@ const Dashboard = () => {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="font-semibold text-gray-700 mb-2">Today's Dispatches</h3>
-              <p className="text-3xl font-bold text-blue-600">{stats?.todayStats.totalSlabs || 0}</p>
+              <p className="text-3xl font-bold text-blue-600">{stats?.todayStats.totalDispatches || 0}</p>
               <p className="text-sm text-gray-500">
-                {stats?.todayStats.totalSlabs && stats.todayStats.totalSlabs > 0 
-                  ? `Active today` 
+                {stats?.todayStats.totalDispatches && stats.todayStats.totalDispatches > 0
+                  ? `Active today`
                   : 'No dispatches yet'
                 }
               </p>

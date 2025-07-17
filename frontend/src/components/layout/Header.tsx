@@ -32,9 +32,6 @@ const Header: React.FC<HeaderProps> = ({ onHamburgerClick }) => {
                 <h1 className="text-lg font-bold text-gradient sm:text-xl lg:text-2xl">
                   Dispatch Measurement
                 </h1>
-                <span className="text-xs text-gray-500 sm:ml-3 sm:text-sm">
-                  Samdani Group ERP
-                </span>
               </div>
             </div>
             

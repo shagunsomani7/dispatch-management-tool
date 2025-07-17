@@ -1,4 +1,4 @@
-export type MeasurementUnit = 'inches' | 'cm' | 'mm';
+export type MeasurementUnit = 'inches' | 'cm';
 
 export interface CornerDeduction {
   id: string;
