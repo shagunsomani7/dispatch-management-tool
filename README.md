@@ -1,4 +1,4 @@
-# Samdani Group Dispatch Management System
+#  Dispatch Management System
 
 A comprehensive ERP solution for factory supervisors to digitally measure slab dimensions with auto-calculations, PDF generation, and cloud storage.
 
