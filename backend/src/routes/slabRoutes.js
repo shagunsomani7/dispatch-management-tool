@@ -173,6 +173,97 @@ router.delete('/clear-all', requireRole('admin'), async(req, res) => {
     }
 });
 
+// DELETE /api/slabs/clear-by-date-range - Delete slab measurements by date range
+router.delete('/clear-by-date-range', requireRole('admin'), async(req, res) => {
+    try {
+        const { startDate, endDate, dateField = 'createdAt' } = req.query;
+
+        // Validate required parameters
+        if (!startDate || !endDate) {
+            return res.status(400).json({
+                message: 'Both startDate and endDate are required',
+                example: 'DELETE /api/slabs/clear-by-date-range?startDate=2024-01-01&endDate=2024-01-31'
+            });
+        }
+
+        // Validate date field
+        const validDateFields = ['createdAt', 'dispatchTimestamp', 'updatedAt'];
+        if (!validDateFields.includes(dateField)) {
+            return res.status(400).json({
+                message: 'Invalid dateField. Must be one of: createdAt, dispatchTimestamp, updatedAt',
+                provided: dateField
+            });
+        }
+
+        // Parse and validate dates
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+
+        if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+            return res.status(400).json({
+                message: 'Invalid date format. Use YYYY-MM-DD format',
+                provided: { startDate, endDate }
+            });
+        }
+
+        if (start >= end) {
+            return res.status(400).json({
+                message: 'startDate must be before endDate',
+                provided: { startDate, endDate }
+            });
+        }
+
+        // Set end date to end of day to be inclusive
+        end.setHours(23, 59, 59, 999);
+
+        console.log(`Admin ${req.user.username} requesting deletion of slabs from ${start.toISOString()} to ${end.toISOString()} by ${dateField}`);
+
+        // Build query based on date field
+        const query = {
+            [dateField]: {
+                $gte: start,
+                $lte: end
+            }
+        };
+
+        // First, get count of records that would be deleted for confirmation
+        const countToDelete = await SlabMeasurement.countDocuments(query);
+
+        if (countToDelete === 0) {
+            return res.json({
+                message: 'No slab measurements found in the specified date range',
+                deletedCount: 0,
+                dateRange: {
+                    startDate: start.toISOString(),
+                    endDate: end.toISOString(),
+                    dateField
+                }
+            });
+        }
+
+        // Delete the records
+        const result = await SlabMeasurement.deleteMany(query);
+
+        console.log(`Successfully deleted ${result.deletedCount} slab measurements by date range`);
+
+        res.json({
+            message: `Successfully deleted ${result.deletedCount} slab measurements from date range`,
+            deletedCount: result.deletedCount,
+            dateRange: {
+                startDate: start.toISOString(),
+                endDate: end.toISOString(),
+                dateField
+            }
+        });
+    } catch (error) {
+        console.error('Error deleting slab measurements by date range:', error);
+        res.status(500).json({
+            message: 'Error deleting slab measurements by date range',
+            error: error.message
+        });
+    }
+});
+
 // GET /api/slabs/next-slab-number/:lotNumber - Get next slab number for a lot
 router.get('/next-slab-number/:lotNumber', async(req, res) => {
     try {

@@ -14,12 +14,12 @@ const UserManagement: React.FC = () => {
   const [success, setSuccess] = useState<string | null>(null);
 
   // Add user form state
-  const [newUser, setNewUser] = useState({ username: '', password: '', role: 'user' });
+  const [newUser, setNewUser] = useState({ username: '', password: '', role: 'supervisor' });
   const [addLoading, setAddLoading] = useState(false);
 
   // Update user state
   const [editUserId, setEditUserId] = useState<string | null>(null);
-  const [editRole, setEditRole] = useState('user');
+  const [editRole, setEditRole] = useState('supervisor');
   const [editPassword, setEditPassword] = useState('');
   const [updateLoading, setUpdateLoading] = useState(false);
 
@@ -50,7 +50,7 @@ const UserManagement: React.FC = () => {
     try {
       await apiService.registerUser(newUser);
       setSuccess('User added successfully');
-      setNewUser({ username: '', password: '', role: 'user' });
+      setNewUser({ username: '', password: '', role: 'supervisor' });
       fetchUsers();
     } catch (err: any) {
       setError(err.message || 'Failed to add user');
@@ -71,7 +71,7 @@ const UserManagement: React.FC = () => {
   // Cancel editing
   const cancelEdit = () => {
     setEditUserId(null);
-    setEditRole('user');
+    setEditRole('supervisor');
     setEditPassword('');
   };
 
@@ -89,7 +89,7 @@ const UserManagement: React.FC = () => {
       });
       setSuccess('User updated successfully');
       setEditUserId(null);
-      setEditRole('user');
+      setEditRole('supervisor');
       setEditPassword('');
       fetchUsers();
     } catch (err: any) {
@@ -117,7 +117,7 @@ const UserManagement: React.FC = () => {
           <div className="mb-4">
             <label className="block mb-1 font-medium">Role</label>
             <select className="input-field" value={newUser.role} onChange={e => setNewUser({ ...newUser, role: e.target.value })}>
-              <option value="user">User</option>
+              <option value="supervisor">Supervisor</option>
               <option value="admin">Admin</option>
             </select>
           </div>
@@ -149,7 +149,7 @@ const UserManagement: React.FC = () => {
                   <td className="py-2 px-3 border-b">{user.username}</td>
                   <td className="py-2 px-3 border-b">{editUserId === user._id ? (
                     <select className="input-field" value={editRole} onChange={e => setEditRole(e.target.value)}>
-                      <option value="user">User</option>
+                      <option value="supervisor">Supervisor</option>
                       <option value="admin">Admin</option>
                     </select>
                   ) : (

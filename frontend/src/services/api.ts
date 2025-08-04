@@ -190,6 +190,39 @@ class ApiService {
     });
   }
 
+  async clearSlabsByDateRange(params: {
+    startDate: string;
+    endDate: string;
+    dateField?: 'createdAt' | 'dispatchTimestamp' | 'updatedAt';
+  }): Promise<{
+    message: string;
+    deletedCount: number;
+    dateRange: {
+      startDate: string;
+      endDate: string;
+      dateField: string;
+    };
+  }> {
+    const queryParams = new URLSearchParams();
+    queryParams.append('startDate', params.startDate);
+    queryParams.append('endDate', params.endDate);
+    if (params.dateField) {
+      queryParams.append('dateField', params.dateField);
+    }
+
+    return this.request<{
+      message: string;
+      deletedCount: number;
+      dateRange: {
+        startDate: string;
+        endDate: string;
+        dateField: string;
+      };
+    }>(`/slabs/clear-by-date-range?${queryParams.toString()}`, {
+      method: 'DELETE',
+    });
+  }
+
   async getNextSlabNumber(lotNumber: string): Promise<{ nextSlabNumber: number }> {
     return this.request<{ nextSlabNumber: number }>(`/slabs/next-slab-number/${lotNumber}`);
   }
@@ -409,10 +442,32 @@ class ApiService {
   }
 
   async registerUser(data: { username: string; password: string; role: string }): Promise<{ message: string }> {
-    return this.request<{ message: string }>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
+    try {
+      console.log('Attempting to register user with:', { username: data.username, role: data.role });
+      
+      const response = await fetch(`${this.baseUrl}/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      });
+
+      const responseData = await response.json();
+      console.log('Register response:', responseData);
+      
+      if (!response.ok) {
+        throw new Error(responseData.message || 'Registration failed');
+      }
+
+      return responseData;
+    } catch (error) {
+      console.error('Registration failed:', error);
+      if (error instanceof Error) {
+        throw new Error(`Registration failed: ${error.message}`);
+      }
+      throw new Error('Registration failed: Unknown error occurred');
+    }
   }
 }
 
