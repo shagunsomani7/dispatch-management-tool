@@ -8,6 +8,7 @@ import Reports from './components/reports/Reports';
 import Login from './components/auth/Login';
 import UserManagement from './components/pages/UserManagement';
 import TruckDashboard from './components/pages/TruckDashboard';
+import DatabaseManagement from './components/pages/DatabaseManagement';
 import { apiService } from './services/api';
 
 interface AuthProviderProps {
@@ -145,6 +146,13 @@ function App() {
             <RequireAuth requireAdmin>
               <Layout>
                 <UserManagement />
+              </Layout>
+            </RequireAuth>
+          } />
+          <Route path="/database-management" element={
+            <RequireAuth requireAdmin>
+              <Layout>
+                <DatabaseManagement />
               </Layout>
             </RequireAuth>
           } />

@@ -169,7 +169,7 @@ const TruckDashboard: React.FC = () => {
                 <span className="text-lg font-semibold">{truck.totalSlabs}</span>
               </div>
               <div className="flex flex-col items-center">
-                <span className="text-xs text-gray-500">Gross Area</span>
+                <span className="text-xs text-gray-500">Total Area</span>
                 <span className="text-lg font-semibold">{truck.grossArea.toFixed(2)} sq ft</span>
               </div>
             </div>
@@ -196,13 +196,13 @@ const TruckDashboard: React.FC = () => {
                     <div className="p-4 pt-2">
                       {party.materials.map((mat) => (
                         <div key={mat.material} className="mb-4">
-                          <div className="font-medium text-gray-700 mb-1">Material: {mat.material} <span className="text-xs text-gray-500">(Gross Area: {mat.area.toFixed(2)} sq ft)</span></div>
+                          <div className="font-medium text-gray-700 mb-1">Material: {mat.material} <span className="text-xs text-gray-500">(Total Area: {mat.area.toFixed(2)} sq ft)</span></div>
                           <div className="overflow-x-auto">
                             <table className="min-w-full text-xs border rounded-lg">
                               <thead>
                                 <tr className="bg-gray-200">
                                   <th className="px-3 py-2 border-b text-left font-bold">Slab #</th>
-                                  <th className="px-3 py-2 border-b text-left font-bold">Gross Area (sq ft)</th>
+                                  <th className="px-3 py-2 border-b text-left font-bold">Total Area (sq ft)</th>
                                   <th className="px-3 py-2 border-b text-left font-bold">Size (L × H)</th>
                                 </tr>
                               </thead>
@@ -280,7 +280,7 @@ const TruckDashboard: React.FC = () => {
                       <span className="font-semibold">{truck.totalSlabs}</span>
                     </div>
                     <div className="flex flex-col items-center">
-                      <span className="text-xs text-gray-500">Gross Area</span>
+                      <span className="text-xs text-gray-500">Total Area</span>
                       <span className="font-semibold">{truck.grossArea.toFixed(2)} sq ft</span>
                     </div>
                   </div>

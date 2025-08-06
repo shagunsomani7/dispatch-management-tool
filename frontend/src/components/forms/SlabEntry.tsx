@@ -250,8 +250,8 @@ const Modal: React.FC<ModalProps> = ({ open, type = 'confirm', title, content, a
   );
 };
 
-// Draft key for localStorage
-const SLAB_DRAFT_KEY = 'slab_entry_draft_v1';
+// Draft key for localStorage - enhanced version
+const DRAFTS_STORAGE_KEY = 'slab_entry_drafts_v2';
 
 const SlabEntry = () => {
   const navigate = useNavigate();
@@ -323,6 +323,11 @@ const SlabEntry = () => {
   const [modal, setModal] = useState<{ open: boolean; type?: 'success' | 'error' | 'confirm'; title?: string; content?: React.ReactNode; actions?: React.ReactNode }>({ open: false });
   // Save Draft state
   const [draftLoaded, setDraftLoaded] = useState(false);
+  
+  // Enhanced draft management state
+  const [availableDrafts, setAvailableDrafts] = useState<{[key: string]: any}>({});
+  const [selectedDraftKey, setSelectedDraftKey] = useState<string>('');
+  const [showDraftSelector, setShowDraftSelector] = useState(false);
 
   // Load initial data and generate initial lot number
   useEffect(() => {
@@ -1027,7 +1032,7 @@ const SlabEntry = () => {
       return undefined;
     }
 
-    const pdf = new jsPDF('landscape');
+    const pdf = new jsPDF('portrait');
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
     const margin = 15;
@@ -1085,13 +1090,13 @@ const SlabEntry = () => {
     const col2X = margin + (pageWidth - 2 * margin) / 2 + 20;
     const infoY = yPosition;
 
-    // Billed To section with background
+    // Measured For section with background
     pdf.setFillColor(HEADER_BG[0], HEADER_BG[1], HEADER_BG[2]);
     pdf.rect(col1X - 5, infoY - 5, (pageWidth - 2 * margin) / 2, 25, 'F');
 
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(9);
-    pdf.text('BILLED TO:', col1X, infoY);
+    pdf.text('MEASURED FOR:', col1X, infoY);
     pdf.setFont('helvetica', 'normal');
     pdf.text(dispatchInfo.partyName || 'N/A', col1X, infoY + 5);
     yPosition = infoY + 12;
@@ -1153,12 +1158,29 @@ const SlabEntry = () => {
       // Format deduction dimensions as L×H, filter out empty corners
       const deductionDimensions = slab.corners
         .filter((corner: any) => corner.length > 0 || corner.height > 0)
-        .map((corner: any) => `${corner.length || 0}×${corner.height || 0}`)
+        .map((corner: any) => {
+          // Format dimensions based on measurement unit
+          const lengthStr = dispatchInfo.measurementUnit === 'inches' 
+            ? Math.round(corner.length || 0).toString()
+            : (corner.length || 0).toFixed(2);
+          const heightStr = dispatchInfo.measurementUnit === 'inches' 
+            ? Math.round(corner.height || 0).toString()
+            : (corner.height || 0).toFixed(2);
+          return `${lengthStr}×${heightStr}`;
+        })
         .join(', ') || 'None';
+
+      // Format main dimensions based on measurement unit
+      const lengthStr = dispatchInfo.measurementUnit === 'inches' 
+        ? Math.round(slab.length).toString()
+        : slab.length.toFixed(2);
+      const heightStr = dispatchInfo.measurementUnit === 'inches' 
+        ? Math.round(slab.height).toString()
+        : slab.height.toFixed(2);
 
       return [
         slab.slabNumber.toString(),
-        `${slab.length.toFixed(2)}×${slab.height.toFixed(2)}`,
+        `${lengthStr}×${heightStr}`,
         deductionDimensions,
         slab.netArea.toFixed(2)
       ];
@@ -1167,7 +1189,7 @@ const SlabEntry = () => {
     console.log('PDF Debug - Table data:', tableData);
     console.log('PDF Debug - slabsWithAreas for totals:', slabsWithAreas);
 
-    const totalTableWidth = 170; // Reduced width for 4 columns
+    const totalTableWidth = 150; // Adjusted width for portrait mode
     const centeredMargin = (pageWidth - totalTableWidth) / 2;
 
     // Add table using autoTable with enhanced columns
@@ -1196,10 +1218,10 @@ const SlabEntry = () => {
         valign: 'middle'
       },
       columnStyles: {
-        0: { cellWidth: 25, halign: 'center' }, // Slab #
-        1: { cellWidth: 45 }, // Dimensions (L×H)
-        2: { cellWidth: 60 }, // Deductions (L×H format)
-        3: { cellWidth: 40 }  // Net Area
+        0: { cellWidth: 20, halign: 'center' }, // Slab # - reduced from 25
+        1: { cellWidth: 40 }, // Dimensions (L×H) - reduced from 45
+        2: { cellWidth: 55 }, // Deductions (L×H format) - reduced from 60
+        3: { cellWidth: 35 }  // Net Area - reduced from 40
       },
       alternateRowStyles: {
         fillColor: [245, 245, 245] as [number, number, number]
@@ -1230,13 +1252,28 @@ const SlabEntry = () => {
     });
 
     // Get the final Y position after the table
-    const finalY = (pdf as any).lastAutoTable.finalY + 15;
+    let finalY = (pdf as any).lastAutoTable.finalY + 15;
+
+    // Check if we need to add a new page for totals
+    const spaceNeededForTotalsAndNotes = 80; // Space needed for totals + notes + signature
+    if (finalY + spaceNeededForTotalsAndNotes > pageHeight - margin) {
+      pdf.addPage();
+      finalY = margin + 20; // Reset Y position on new page
+      
+      // Add page header on new page
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(PRIMARY_COLOR[0], PRIMARY_COLOR[1], PRIMARY_COLOR[2]);
+      pdf.text('DISPATCH NOTE - SUMMARY', pageWidth / 2, margin + 10, { align: 'center' });
+      finalY += 10;
+    }
 
     // Add totals with simplified layout
     const totalNet = slabsWithAreas.reduce((sum, slab) => sum + (slab.netArea || 0), 0);
     
     console.log('PDF Debug - Calculated totals:');
     console.log('totalNet:', totalNet);
+    console.log('finalY position:', finalY);
     console.log('PDF Debug - Individual slab values for totals:');
     slabsWithAreas.forEach((slab, index) => {
       console.log(`Slab ${index + 1} totals contribution:`, {
@@ -1244,15 +1281,21 @@ const SlabEntry = () => {
       });
     });
 
-    const totalsXLabel = pageWidth - margin - 180;
+    const totalsXLabel = pageWidth - margin - 150; // Adjusted for portrait mode
     const totalsXValue = pageWidth - margin - 5;
+
+    // Add a separator line before totals
+    pdf.setDrawColor(SEPARATOR_COLOR[0], SEPARATOR_COLOR[1], SEPARATOR_COLOR[2]);
+    pdf.line(margin, finalY - 5, pageWidth - margin, finalY - 5);
 
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(TEXT_COLOR_DARK);
     pdf.text('Total Slabs Dispatched:', totalsXLabel, finalY);
     pdf.text((slabsWithAreas?.length || 0).toString(), totalsXValue, finalY, { align: 'right' });
 
     pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(PRIMARY_COLOR[0], PRIMARY_COLOR[1], PRIMARY_COLOR[2]);
     pdf.text(`TOTAL NET DISPATCHED AREA (ft²):`, totalsXLabel, finalY + 10);
     pdf.text(totalNet.toFixed(2), totalsXValue, finalY + 10, { align: 'right' });
 
@@ -1284,71 +1327,129 @@ const SlabEntry = () => {
     return { fileName, pdfBlob };
   };
 
-  // --- Save Draft logic ---
-  // Save current form state to localStorage
+  // --- Enhanced Draft Management ---
+  // Load all available drafts from localStorage
+  const loadAvailableDrafts = () => {
+    try {
+      const draftsData = localStorage.getItem(DRAFTS_STORAGE_KEY);
+      if (draftsData) {
+        const drafts = JSON.parse(draftsData);
+        setAvailableDrafts(drafts);
+        return drafts;
+      }
+    } catch (error) {
+      console.error('Error loading drafts:', error);
+    }
+    return {};
+  };
+
+  // Save current form state with date and dispatch number
   const saveDraft = () => {
+    if (!dispatchInfo.lotNumber || !dispatchNumber) {
+      setModal({
+        open: true,
+        type: 'error',
+        title: 'Cannot Save Draft',
+        content: 'Please fill in Lot Number and Dispatch Number before saving draft.',
+        actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+      });
+      return;
+    }
+
+    const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    const draftKey = `${currentDate}_${dispatchNumber}`;
+    
     const draft = {
       dispatchInfo,
       slab,
       currentDispatchSlabs,
       dispatchNumber,
-      isDispatchStarted
+      isDispatchStarted,
+      savedAt: new Date().toISOString(),
+      lotNumber: dispatchInfo.lotNumber
     };
-    localStorage.setItem(SLAB_DRAFT_KEY, JSON.stringify(draft));
+
+    // Load existing drafts
+    const existingDrafts = loadAvailableDrafts();
+    existingDrafts[draftKey] = draft;
+    
+    // Save back to localStorage
+    localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(existingDrafts));
+    
+    // Update state
+    setAvailableDrafts(existingDrafts);
+    
     setModal({
       open: true,
       type: 'success',
       title: 'Draft Saved',
-      content: 'Your draft has been saved locally. You can resume later.',
+      content: `Draft saved for ${currentDate} - Dispatch #${dispatchNumber}. You can retrieve it later using the Load Draft option.`,
       actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
     });
   };
-  // Load draft on mount
-  useEffect(() => {
-    if (!draftLoaded) {
-      const draftStr = localStorage.getItem(SLAB_DRAFT_KEY);
-      if (draftStr) {
+
+  // Load specific draft by key
+  const loadDraft = (draftKey: string) => {
+    try {
+      const drafts = loadAvailableDrafts();
+      const draft = drafts[draftKey];
+      
+      if (draft) {
+        setDispatchInfo(draft.dispatchInfo);
+        setSlab(draft.slab);
+        setCurrentDispatchSlabs(draft.currentDispatchSlabs || []);
+        setDispatchNumber(draft.dispatchNumber);
+        setIsDispatchStarted(draft.isDispatchStarted || false);
+        
         setModal({
           open: true,
-          type: 'confirm',
-          title: 'Load Draft?',
-          content: 'A saved draft was found. Would you like to load it?',
-          actions: [
-            <button key="load" className="btn-primary" onClick={() => {
-              try {
-                const draft = JSON.parse(localStorage.getItem(SLAB_DRAFT_KEY) || '{}');
-                if (draft.dispatchInfo) setDispatchInfo(draft.dispatchInfo);
-                if (draft.slab) setSlab(draft.slab);
-                if (draft.currentDispatchSlabs) setCurrentDispatchSlabs(draft.currentDispatchSlabs);
-                if (draft.dispatchNumber) setDispatchNumber(draft.dispatchNumber);
-                if (draft.isDispatchStarted) setIsDispatchStarted(draft.isDispatchStarted);
-                setDraftLoaded(true);
-                setModal({ open: false });
-              } catch {
+          type: 'success',
+          title: 'Draft Loaded',
+          content: `Successfully loaded draft from ${draftKey.replace('_', ' - Dispatch #')}.`,
+          actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+        });
+        
+        setShowDraftSelector(false);
+        setSelectedDraftKey('');
+      }
+    } catch (error) {
                 setModal({
                   open: true,
                   type: 'error',
-                  title: 'Draft Error',
-                  content: 'Failed to load draft. It may be corrupted.',
+        title: 'Load Error',
+        content: 'Failed to load the selected draft. It may be corrupted.',
                   actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
                 });
               }
-            }}>Load</button>,
-            <button key="discard" className="btn-secondary" onClick={() => {
-              localStorage.removeItem(SLAB_DRAFT_KEY);
-              setDraftLoaded(true);
-              setModal({ open: false });
-            }}>Discard</button>
-          ]
-        });
-      } else {
+  };
+
+  // Delete specific draft
+  const deleteDraft = (draftKey: string) => {
+    const drafts = loadAvailableDrafts();
+    delete drafts[draftKey];
+    localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
+    setAvailableDrafts(drafts);
+    setSelectedDraftKey('');
+  };
+  // Load available drafts on mount
+  useEffect(() => {
+    if (!draftLoaded) {
+      loadAvailableDrafts();
         setDraftLoaded(true);
-      }
     }
   }, [draftLoaded]);
-  // Clear draft on successful submit or explicit discard
+
+  // Load available drafts whenever component mounts to update the counter
+  useEffect(() => {
+    loadAvailableDrafts();
+  }, []);
+  // Clear specific draft after successful submit
   const clearDraft = () => {
-    localStorage.removeItem(SLAB_DRAFT_KEY);
+    if (dispatchInfo.lotNumber && dispatchNumber) {
+      const currentDate = new Date().toISOString().split('T')[0];
+      const draftKey = `${currentDate}_${dispatchNumber}`;
+      deleteDraft(draftKey);
+    }
   };
 
   return (
@@ -1541,13 +1642,22 @@ const SlabEntry = () => {
             {/* Dispatch Warehouse */}
             <div className="form-group">
               <label className="form-label">Dispatch Warehouse</label>
-              <input
-                type="text"
+              <select
                 value={dispatchInfo.dispatchWarehouse}
                 onChange={(e) => handleDispatchInfoChange('dispatchWarehouse', e.target.value)}
                 className="input-field"
-                placeholder="Enter warehouse location"
-              />
+              >
+                <option value="">Select warehouse</option>
+                <option value="CM">CM</option>
+                <option value="ST">ST</option>
+                <option value="MS">MS</option>
+                <option value="NMG">NMG</option>
+                <option value="MG">MG</option>
+                <option value="HM">HM</option>
+                <option value="G2">G2</option>
+                <option value="GP">GP</option>
+                <option value="TK">TK</option>
+              </select>
             </div>
 
             {/* Supervisor Name */}
@@ -1962,13 +2072,83 @@ const SlabEntry = () => {
           </div>
         )}
       </div>
+
+      {/* Draft Management Section */}
+      <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+          <h3 className="text-lg font-semibold text-blue-800 mb-2 sm:mb-0">Draft Management</h3>
+          
+          <button
+            type="button"
+            onClick={() => setShowDraftSelector(!showDraftSelector)}
+            className="btn-secondary"
+            disabled={Object.keys(availableDrafts).length === 0}
+          >
+            {showDraftSelector ? 'Hide' : 'Load'} Saved Drafts ({Object.keys(availableDrafts).length})
+          </button>
+        </div>
+
+        {showDraftSelector && Object.keys(availableDrafts).length > 0 && (
+          <div className="mt-4 p-4 bg-white border border-blue-300 rounded-md">
+            <h4 className="font-medium text-blue-700 mb-3">Select Draft to Load:</h4>
+            
+            <div className="space-y-3">
+              {Object.entries(availableDrafts).map(([draftKey, draft]: [string, any]) => {
+                const [date, dispatchNum] = draftKey.split('_');
+                const savedAt = new Date(draft.savedAt).toLocaleString();
+                
+                return (
+                  <div key={draftKey} className="flex items-center justify-between p-3 border border-gray-200 rounded bg-gray-50">
+                    <div className="flex-1">
+                      <div className="font-medium text-gray-800">
+                        📅 {date} - 🚚 Dispatch #{dispatchNum}
+                      </div>
+                      <div className="text-sm text-gray-600">
+                        Lot: {draft.lotNumber} | Saved: {savedAt} | Slabs: {draft.currentDispatchSlabs?.length || 0}
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-2 ml-4">
+                      <button
+                        type="button"
+                        onClick={() => loadDraft(draftKey)}
+                        className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        Load
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`Are you sure you want to delete the draft for ${date} - Dispatch #${dispatchNum}?`)) {
+                            deleteDraft(draftKey);
+                          }
+                        }}
+                        className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {Object.keys(availableDrafts).length === 0 && (
+          <div className="mt-3 text-sm text-blue-600">
+            No saved drafts available. Save a draft to see it here.
+          </div>
+        )}
+      </div>
+
       {currentDispatchSlabs.length > 0 && (
         <div className="mt-8 flex flex-col sm:flex-row justify-end gap-2">
           <button
             type="button"
             onClick={saveDraft}
             className="btn-secondary w-full sm:w-auto"
-            title="Save draft to local storage"
+            title="Save draft with current date and dispatch number"
           >
             Save Draft
           </button>

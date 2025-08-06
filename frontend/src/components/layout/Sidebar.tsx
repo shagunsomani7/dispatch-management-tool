@@ -22,6 +22,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobile = false, onClose }) => {
       { path: '/slabs', label: 'View Database', icon: '🗄️' },
       { path: '/reports', label: 'Reports', icon: '📈' },
       { path: '/user-management', label: 'User Management', icon: '👤' },
+      { path: '/database-management', label: 'Database Management', icon: '🗑️' },
     ];
   } else {
     menuItems = [

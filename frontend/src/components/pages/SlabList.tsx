@@ -155,7 +155,7 @@ const SlabList = () => {
       const allSlabs = dispatchData.slabs;
       const dispatchInfo = dispatchData.dispatchInfo;
 
-      const pdf = new jsPDF('landscape');
+      const pdf = new jsPDF('portrait');
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
       const margin = 15;
@@ -213,13 +213,13 @@ const SlabList = () => {
       const col2X = margin + (pageWidth - 2 * margin) / 2 + 20;
       const infoY = yPosition;
 
-      // Billed To section with background
+      // Measured For section with background
       pdf.setFillColor(HEADER_BG[0], HEADER_BG[1], HEADER_BG[2]);
       pdf.rect(col1X - 5, infoY - 5, (pageWidth - 2 * margin) / 2, 25, 'F');
 
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(9);
-      pdf.text('BILLED TO:', col1X, infoY);
+      pdf.text('MEASURED FOR:', col1X, infoY);
       pdf.setFont('helvetica', 'normal');
       pdf.text(dispatchInfo.partyName || 'N/A', col1X, infoY + 5);
       yPosition = infoY + 12;
@@ -280,12 +280,29 @@ const SlabList = () => {
         // Format deduction dimensions as L×H, filter out empty corners
         const deductionDimensions = slab.corners
           .filter((corner: any) => corner.length > 0 || corner.height > 0)
-          .map((corner: any) => `${corner.length || 0}×${corner.height || 0}`)
+          .map((corner: any) => {
+            // Format dimensions based on measurement unit
+            const lengthStr = dispatchInfo.measurementUnit === 'inches' 
+              ? Math.round(corner.length || 0).toString()
+              : (corner.length || 0).toFixed(2);
+            const heightStr = dispatchInfo.measurementUnit === 'inches' 
+              ? Math.round(corner.height || 0).toString()
+              : (corner.height || 0).toFixed(2);
+            return `${lengthStr}×${heightStr}`;
+          })
           .join(', ') || 'None';
+
+        // Format main dimensions based on measurement unit
+        const lengthStr = dispatchInfo.measurementUnit === 'inches' 
+          ? Math.round(slab.length).toString()
+          : slab.length.toFixed(2);
+        const heightStr = dispatchInfo.measurementUnit === 'inches' 
+          ? Math.round(slab.height).toString()
+          : slab.height.toFixed(2);
 
         return [
           slab.slabNumber.toString(),
-          `${slab.length.toFixed(2)}×${slab.height.toFixed(2)}`,
+          `${lengthStr}×${heightStr}`,
           deductionDimensions,
           slab.netArea.toFixed(2)
         ];
@@ -294,7 +311,7 @@ const SlabList = () => {
       console.log('PDF Debug - Table data:', tableData);
       console.log('PDF Debug - slabsWithAreas for totals:', slabsWithAreas);
 
-      const totalTableWidth = 170; // Reduced width for 4 columns
+      const totalTableWidth = 150; // Adjusted width for portrait mode
       const centeredMargin = (pageWidth - totalTableWidth) / 2;
 
       // Add table using autoTable with enhanced columns
@@ -323,10 +340,10 @@ const SlabList = () => {
           valign: 'middle'
         },
         columnStyles: {
-          0: { cellWidth: 25, halign: 'center' }, // Slab #
-          1: { cellWidth: 45 }, // Dimensions (L×H)
-          2: { cellWidth: 60 }, // Deductions (L×H format)
-          3: { cellWidth: 40 }  // Net Area
+          0: { cellWidth: 20, halign: 'center' }, // Slab # - reduced from 25
+          1: { cellWidth: 40 }, // Dimensions (L×H) - reduced from 45
+          2: { cellWidth: 55 }, // Deductions (L×H format) - reduced from 60
+          3: { cellWidth: 35 }  // Net Area - reduced from 40
         },
         alternateRowStyles: {
           fillColor: [245, 245, 245] as [number, number, number]
@@ -357,13 +374,28 @@ const SlabList = () => {
       });
 
       // Get the final Y position after the table
-      const finalY = (pdf as any).lastAutoTable.finalY + 15;
+      let finalY = (pdf as any).lastAutoTable.finalY + 15;
+
+      // Check if we need to add a new page for totals
+      const spaceNeededForTotalsAndNotes = 80; // Space needed for totals + notes + signature
+      if (finalY + spaceNeededForTotalsAndNotes > pageHeight - margin) {
+        pdf.addPage();
+        finalY = margin + 20; // Reset Y position on new page
+        
+        // Add page header on new page
+        pdf.setFontSize(12);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(PRIMARY_COLOR[0], PRIMARY_COLOR[1], PRIMARY_COLOR[2]);
+        pdf.text('DISPATCH NOTE - SUMMARY', pageWidth / 2, margin + 10, { align: 'center' });
+        finalY += 10;
+      }
 
       // Add totals with simplified layout
       const totalNet = slabsWithAreas.reduce((sum, slab) => sum + (slab.netArea || 0), 0);
       
       console.log('PDF Debug - Calculated totals:');
       console.log('totalNet:', totalNet);
+      console.log('finalY position:', finalY);
       console.log('PDF Debug - Individual slab values for totals:');
       slabsWithAreas.forEach((slab, index) => {
         console.log(`Slab ${index + 1} totals contribution:`, {
@@ -371,15 +403,21 @@ const SlabList = () => {
         });
       });
 
-      const totalsXLabel = pageWidth - margin - 180;
+      const totalsXLabel = pageWidth - margin - 150; // Adjusted for portrait mode
       const totalsXValue = pageWidth - margin - 5;
+
+      // Add a separator line before totals
+      pdf.setDrawColor(SEPARATOR_COLOR[0], SEPARATOR_COLOR[1], SEPARATOR_COLOR[2]);
+      pdf.line(margin, finalY - 5, pageWidth - margin, finalY - 5);
 
       pdf.setFontSize(9);
       pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(TEXT_COLOR_DARK);
       pdf.text('Total Slabs Dispatched:', totalsXLabel, finalY);
       pdf.text((slabsWithAreas?.length || 0).toString(), totalsXValue, finalY, { align: 'right' });
 
       pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(PRIMARY_COLOR[0], PRIMARY_COLOR[1], PRIMARY_COLOR[2]);
       pdf.text(`TOTAL NET DISPATCHED AREA (ft²):`, totalsXLabel, finalY + 10);
       pdf.text(totalNet.toFixed(2), totalsXValue, finalY + 10, { align: 'right' });
 
