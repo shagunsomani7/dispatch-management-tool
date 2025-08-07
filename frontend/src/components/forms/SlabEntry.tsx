@@ -5,6 +5,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../App';
+import * as XLSX from 'xlsx';
 
 interface SlabFormData {
   id: string;
@@ -866,11 +867,16 @@ const SlabEntry = () => {
           supervisorName: dispatchInfo.supervisorName,
           thickness: dispatchInfo.thickness,
           measurementUnit: dispatchInfo.measurementUnit,
-          dispatchVehicleNumber: dispatchInfo.dispatchVehicleNumber,
+          dispatchVehicleNumber: dispatchInfo.dispatchVehicleNumber || '',
+          dispatchWarehouse: dispatchInfo.dispatchWarehouse || '',
           slabNumber: tempSlab.slabNumber,
           length: tempSlab.length,
           height: tempSlab.height,
-          cornerDeductions: tempSlab.cornerDeductions,
+          cornerDeductions: tempSlab.cornerDeductions.map(corner => ({
+            length: corner.length,
+            height: corner.height,
+            area: corner.area
+          })),
           grossArea: tempSlab.grossArea,
           totalDeductionArea: tempSlab.totalDeductionArea,
           netArea: tempSlab.netArea,
@@ -1327,6 +1333,225 @@ const SlabEntry = () => {
     return { fileName, pdfBlob };
   };
 
+  // --- Excel Generation Function ---
+  const generateExcel = async (slabs: any[]): Promise<{ fileName: string; excelBlob: Blob } | undefined> => {
+    try {
+      console.log('Starting Excel generation with slabs:', slabs);
+      
+      // Validate input
+      if (!slabs || !Array.isArray(slabs) || slabs.length === 0) {
+        throw new Error('No valid slabs data provided for Excel generation');
+      }
+
+      // Create a new workbook
+      const workbook = XLSX.utils.book_new();
+      
+      // Format date for filename
+      const now = new Date();
+      const formattedDate = now.toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      }).replace(/\//g, '-');
+
+      // Prepare data for the main sheet
+      const mainSheetData = [
+        // Header section
+        ['DISPATCH NOTE'],
+        [''],
+        ['Dispatch Information:'],
+        ['Date:', now.toLocaleDateString('en-GB')],
+        ['Time:', now.toLocaleTimeString('en-GB')],
+        ['Dispatch Number:', dispatchNumber],
+        ['Party Name:', dispatchInfo.partyName || 'N/A'],
+        ['Material Name:', dispatchInfo.materialName || 'N/A'],
+        ['Lot Number:', dispatchInfo.lotNumber || 'N/A'],
+        ['Supervisor:', dispatchInfo.supervisorName || 'N/A'],
+        ['Vehicle Number:', dispatchInfo.dispatchVehicleNumber || 'N/A'],
+        ['Measurement Unit:', dispatchInfo.measurementUnit || 'ft'],
+        ['Thickness:', dispatchInfo.thickness || 'N/A'],
+        ['Dispatch Warehouse:', dispatchInfo.dispatchWarehouse || 'N/A'],
+        [''],
+        ['Slab Details:'],
+        ['Slab #', 'Dimensions (L×H)', 'Corner Deductions', 'Net Area (ft²)']
+      ];
+
+      // Add slab data
+      slabs.forEach((slab, index) => {
+        try {
+          console.log(`Processing slab ${index + 1}:`, slab);
+          
+          // Safely handle cornerDeductions - ensure it's an array
+          const cornerDeductions = Array.isArray(slab.cornerDeductions) ? slab.cornerDeductions : [];
+          
+          const deductionDimensions = cornerDeductions
+            .filter((corner: any) => corner && (corner.length > 0 || corner.height > 0))
+            .map((corner: any) => {
+              // Format dimensions based on measurement unit
+              const lengthStr = dispatchInfo.measurementUnit === 'inches' 
+                ? Math.round(corner.length || 0).toString()
+                : (corner.length || 0).toFixed(2);
+              const heightStr = dispatchInfo.measurementUnit === 'inches' 
+                ? Math.round(corner.height || 0).toString()
+                : (corner.height || 0).toFixed(2);
+              return `${lengthStr}×${heightStr}`;
+            })
+            .join(', ') || 'None';
+
+          // Format main dimensions based on measurement unit
+          const lengthStr = dispatchInfo.measurementUnit === 'inches' 
+            ? Math.round(slab.length).toString()
+            : slab.length.toFixed(2);
+          const heightStr = dispatchInfo.measurementUnit === 'inches' 
+            ? Math.round(slab.height).toString()
+            : slab.height.toFixed(2);
+
+          mainSheetData.push([
+            slab.slabNumber.toString(),
+            `${lengthStr}×${heightStr}`,
+            deductionDimensions,
+            slab.netArea.toFixed(2)
+          ]);
+        } catch (slabError: any) {
+          console.error(`Error processing slab ${index + 1}:`, slabError);
+          throw new Error(`Error processing slab ${slab.slabNumber}: ${slabError.message}`);
+        }
+      });
+
+      // Add summary section
+      const totalNet = slabs.reduce((sum, slab) => sum + (slab.netArea || 0), 0);
+      
+      mainSheetData.push(['']);
+      mainSheetData.push(['Summary:']);
+      mainSheetData.push(['Total Slabs:', slabs.length.toString()]);
+      mainSheetData.push(['Total Net Area (ft²):', totalNet.toFixed(2)]);
+      mainSheetData.push(['']);
+      mainSheetData.push(['Notes:']);
+      mainSheetData.push(['1. All goods received in good condition.']);
+      mainSheetData.push(['2. Please verify measurements upon receipt.']);
+
+      console.log('Main sheet data prepared:', mainSheetData);
+
+      // Create worksheet from data
+      const worksheet = XLSX.utils.aoa_to_sheet(mainSheetData);
+
+      // Set column widths
+      worksheet['!cols'] = [
+        { width: 10 }, // Slab #
+        { width: 20 }, // Dimensions
+        { width: 30 }, // Corner Deductions
+        { width: 15 }  // Net Area
+      ];
+
+      // Add the worksheet to the workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Dispatch Note');
+
+      // Create detailed sheet with all slab information
+      const detailedData = [
+        ['Detailed Slab Information'],
+        [''],
+        // Columns: Slab #, Length, Height, Gross Area, Corner 1 Length, Corner 1 Height, Corner 1 Area, ... (repeat for 4 corners), Total Deductions, Net Area
+        [
+          'Slab #', 'Length', 'Height', 'Gross Area (ft²)',
+          'C1 Length', 'C1 Height', 'C1 Area',
+          'C2 Length', 'C2 Height', 'C2 Area',
+          'C3 Length', 'C3 Height', 'C3 Area',
+          'C4 Length', 'C4 Height', 'C4 Area',
+          'Total Deductions (ft²)', 'Net Area (ft²)'
+        ]
+      ];
+
+      slabs.forEach((slab, idx) => {
+        try {
+          // Excel row index (1-based, including header rows)
+          const row = idx + 5; // 1 header + 1 blank + 1 column header + 1-based idx
+          const corners = Array.isArray(slab.cornerDeductions) ? slab.cornerDeductions : [];
+          // Pad corners to 4
+          while (corners.length < 4) corners.push({ length: 0, height: 0 });
+
+          // Cell refs
+          const lenCol = 'B', hCol = 'C', grossCol = 'D';
+          const c1L = 'E', c1H = 'F', c1A = 'G';
+          const c2L = 'H', c2H = 'I', c2A = 'J';
+          const c3L = 'K', c3H = 'L', c3A = 'M';
+          const c4L = 'N', c4H = 'O', c4A = 'P';
+          const totalDedCol = 'Q', netCol = 'R';
+
+          // Formulas
+          const grossFormula = `=${lenCol}${row}*${hCol}${row}`;
+          const c1AreaFormula = `=${c1L}${row}*${c1H}${row}`;
+          const c2AreaFormula = `=${c2L}${row}*${c2H}${row}`;
+          const c3AreaFormula = `=${c3L}${row}*${c3H}${row}`;
+          const c4AreaFormula = `=${c4L}${row}*${c4H}${row}`;
+          const totalDedFormula = `=${c1A}${row}+${c2A}${row}+${c3A}${row}+${c4A}${row}`;
+          const netAreaFormula = `=${grossCol}${row}-${totalDedCol}${row}`;
+
+          detailedData.push([
+            slab.slabNumber.toString(),
+            slab.length,
+            slab.height,
+            { f: grossFormula },
+            corners[0].length, corners[0].height, { f: c1AreaFormula },
+            corners[1].length, corners[1].height, { f: c2AreaFormula },
+            corners[2].length, corners[2].height, { f: c3AreaFormula },
+            corners[3].length, corners[3].height, { f: c4AreaFormula },
+            { f: totalDedFormula },
+            { f: netAreaFormula }
+          ]);
+        } catch (slabError: any) {
+          console.error(`Error processing detailed slab ${idx + 1}:`, slabError);
+          throw new Error(`Error processing detailed slab ${slab.slabNumber}: ${slabError.message}`);
+        }
+      });
+
+      // Main sheet: reference net area from detailed sheet
+      mainSheetData.length = 18; // keep header and columns
+      slabs.forEach((slab, idx) => {
+        const row = idx + 5;
+        mainSheetData.push([
+          slab.slabNumber.toString(),
+          `${slab.length}×${slab.height}`,
+          (Array.isArray(slab.cornerDeductions) ? slab.cornerDeductions : []).map((c: any) => `${c.length}×${c.height}`).join(', ') || 'None',
+          { f: `Detailed Data!R${row}` }
+        ]);
+      });
+
+      console.log('Detailed sheet data prepared:', detailedData);
+
+      const detailedWorksheet = XLSX.utils.aoa_to_sheet(detailedData);
+      detailedWorksheet['!cols'] = [
+        { width: 8 },  // Slab #
+        { width: 12 }, // Length
+        { width: 12 }, // Height
+        { width: 15 }, // Gross Area
+        { width: 12 }, // Corner 1
+        { width: 12 }, // Corner 2
+        { width: 12 }, // Corner 3
+        { width: 12 }, // Corner 4
+        { width: 18 }, // Total Deductions
+        { width: 12 }  // Net Area
+      ];
+
+      XLSX.utils.book_append_sheet(workbook, detailedWorksheet, 'Detailed Data');
+
+      // Generate filename
+      const fileName = `Dispatch_Note_${dispatchInfo.partyName || 'UnknownParty'}_${dispatchInfo.lotNumber || 'NoLot'}_${formattedDate.replace(/\//g, '-')}.xlsx`;
+      
+      console.log('Generating Excel file:', fileName);
+      
+      // Convert workbook to blob
+      const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+      const excelBlob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      
+      console.log('Excel file generated successfully, blob size:', excelBlob.size);
+      
+      return { fileName, excelBlob };
+    } catch (error: any) {
+      console.error('Error generating Excel:', error);
+      throw new Error(`Failed to generate Excel file: ${error.message}`);
+    }
+  };
+
   // --- Enhanced Draft Management ---
   // Load all available drafts from localStorage
   const loadAvailableDrafts = () => {
@@ -1449,6 +1674,165 @@ const SlabEntry = () => {
       const currentDate = new Date().toISOString().split('T')[0];
       const draftKey = `${currentDate}_${dispatchNumber}`;
       deleteDraft(draftKey);
+    }
+  };
+
+  const generateExcelReport = async () => {
+    if (currentDispatchSlabs.length === 0) {
+      setModal({
+        open: true,
+        type: 'error',
+        title: 'No Slabs',
+        content: 'Please add at least one slab before generating Excel report.',
+        actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+      });
+      return;
+    }
+    if (!dispatchInfo.materialName || !dispatchInfo.lotNumber || !dispatchInfo.partyName) {
+      setModal({
+        open: true,
+        type: 'error',
+        title: 'Missing Info',
+        content: 'Please fill in all required dispatch information fields.',
+        actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+      });
+      return;
+    }
+    setModal({
+      open: true,
+      type: 'confirm',
+      title: 'Generate Excel?',
+      content: `Generate Excel report for ${currentDispatchSlabs.length} slabs? This will save all slabs to database and generate Excel file. Proceed?`,
+      actions: [
+        <button key="yes" className="btn-primary" onClick={async () => {
+          setModal({ open: false });
+          await handleGenerateExcel();
+        }}>Yes</button>,
+        <button key="no" className="btn-secondary" onClick={() => setModal({ open: false })}>No</button>
+      ]
+    });
+  };
+
+  const handleGenerateExcel = async () => {
+    try {
+      setModal({ open: false }); // Close the confirmation modal
+      setLoading(true);
+      setError(null);
+
+      // Save all slabs to database first
+      const savedSlabs = [];
+      for (const slab of currentDispatchSlabs) {
+        try {
+          const slabData = {
+            dispatchId: dispatchNumber,
+            dispatchTimestamp: new Date(),
+            materialName: dispatchInfo.materialName,
+            lotNumber: dispatchInfo.lotNumber,
+            partyName: dispatchInfo.partyName,
+            supervisorName: dispatchInfo.supervisorName,
+            dispatchVehicleNumber: dispatchInfo.dispatchVehicleNumber || '',
+            measurementUnit: dispatchInfo.measurementUnit,
+            thickness: dispatchInfo.thickness,
+            dispatchWarehouse: dispatchInfo.dispatchWarehouse || '',
+            slabNumber: slab.slabNumber,
+            length: slab.length,
+            height: slab.height,
+            cornerDeductions: slab.cornerDeductions.map(corner => ({
+              length: corner.length,
+              height: corner.height,
+              area: corner.area
+            })),
+            grossArea: slab.grossArea,
+            totalDeductionArea: slab.totalDeductionArea,
+            netArea: slab.netArea
+          };
+
+          const savedSlab = await apiService.createSlab(slabData);
+          savedSlabs.push(savedSlab);
+        } catch (error) {
+          console.error('Error saving slab:', error);
+          throw new Error(`Failed to save slab ${slab.slabNumber}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      }
+
+      // Generate Excel file
+      const excelResult = await generateExcel(savedSlabs);
+      if (!excelResult) {
+        throw new Error('Failed to generate Excel file');
+      }
+
+      const { fileName, excelBlob } = excelResult;
+
+      // Download the Excel file
+      const url = window.URL.createObjectURL(excelBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      // Clear draft after successful generation
+      clearDraft();
+
+      // Show success message
+      setModal({
+        open: true,
+        type: 'success',
+        title: 'Excel Generated!',
+        content: <div className="flex flex-col items-center"><span className="text-green-600 text-5xl mb-2">📊</span><div className="text-lg font-semibold mb-1">Your Excel report has been saved and downloaded.</div><div className="text-sm text-gray-700 mb-2">You can now share the Excel file or close this message.</div></div>,
+        actions: [
+          <button key="share" className="btn-primary" onClick={async () => {
+            setModal({ open: false });
+            try {
+              // Try to use native sharing API
+              if (navigator.share && excelBlob) {
+                const file = new File([excelBlob], fileName, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                await navigator.share({
+                  title: 'Dispatch Excel Report',
+                  text: `Dispatch report for ${dispatchInfo.partyName} - ${dispatchInfo.lotNumber}`,
+                  files: [file]
+                });
+              } else {
+                // Fallback: copy to clipboard
+                const shareText = `📊 Dispatch Excel Report\n\nParty: ${dispatchInfo.partyName}\nLot: ${dispatchInfo.lotNumber}\nMaterial: ${dispatchInfo.materialName}\nSlabs: ${savedSlabs.length}\nDate: ${new Date().toLocaleDateString()}\n\nExcel file: ${fileName}`;
+                await navigator.clipboard.writeText(shareText);
+                setModal({
+                  open: true,
+                  type: 'success',
+                  title: 'Copied to Clipboard',
+                  content: 'Report details copied to clipboard! You can now paste the report information in WhatsApp, Email, or any other app.',
+                  actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+                });
+              }
+            } catch (shareError) {
+              console.error('Share error:', shareError);
+              setModal({
+                open: true,
+                type: 'error',
+                title: 'Share Error',
+                content: 'Failed to share. Please manually share the downloaded Excel file.',
+                actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+              });
+            }
+          }}>Share Excel</button>,
+          <button key="close" className="btn-secondary" onClick={() => setModal({ open: false })}>Close</button>
+        ]
+      });
+
+    } catch (error) {
+      console.error('Error generating Excel:', error);
+      setError(error instanceof Error ? error.message : 'Failed to generate Excel report');
+      setModal({
+        open: true,
+        type: 'error',
+        title: 'Excel Generation Failed',
+        content: error instanceof Error ? error.message : 'Failed to generate Excel report',
+        actions: [<button key="ok" className="btn-primary" onClick={() => setModal({ open: false })}>OK</button>]
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -2152,26 +2536,48 @@ const SlabEntry = () => {
           >
             Save Draft
           </button>
-          <button
-            type="button"
-            onClick={generateReport}
-            disabled={loading || currentDispatchSlabs.length === 0}
-            className="bg-green-600 text-white font-medium text-lg px-8 py-3 rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center space-x-2 mx-auto"
-          >
-            {loading ? (
-              <>
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                <span>Generating Report...</span>
-              </>
-            ) : (
-              <>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                </svg>
-                <span>Generate Report</span>
-              </>
-            )}
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={generateExcelReport}
+              disabled={loading || currentDispatchSlabs.length === 0}
+              className="bg-blue-600 text-white font-medium text-lg px-8 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center space-x-2"
+            >
+              {loading ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                  <span>Generating Excel...</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                  </svg>
+                  <span>Generate Excel</span>
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={generateReport}
+              disabled={loading || currentDispatchSlabs.length === 0}
+              className="bg-green-600 text-white font-medium text-lg px-8 py-3 rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center space-x-2"
+            >
+              {loading ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                  <span>Generating Report...</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                  </svg>
+                  <span>Generate Report</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       )}
     </div>

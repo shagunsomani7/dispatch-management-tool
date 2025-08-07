@@ -107,13 +107,13 @@ class ApiService {
       
       console.log('Sending cleaned data:', JSON.stringify(cleanedData, null, 2));
       
-      const response = await this.request<SlabMeasurement>('/slabs', {
+      const response = await this.request<{ message: string; slab: SlabMeasurement }>('/slabs', {
         method: 'POST',
         body: JSON.stringify(cleanedData),
       });
       
       console.log('Slab created successfully:', response);
-      return response;
+      return response.slab; // Return the slab object, not the entire response
     } catch (error) {
       console.error('Error in createSlab:', error);
       if (error instanceof Error) {
@@ -399,9 +399,9 @@ class ApiService {
   }
 
   // Party API
-  async getParties(q?: string): Promise<{ _id: string; name: string }[]> {
+  async getParties(q?: string): Promise<{ _id: string; name: string; createdAt: string; updatedAt: string }[]> {
     const query = q ? `?q=${encodeURIComponent(q)}` : '';
-    return this.request<{ _id: string; name: string }[]>(`/parties${query}`, {
+    return this.request<{ _id: string; name: string; createdAt: string; updatedAt: string }[]>(`/parties${query}`, {
       method: 'GET',
     });
   }
@@ -413,19 +413,45 @@ class ApiService {
     });
   }
 
+  async updateParty(id: string, name: string): Promise<{ _id: string; name: string }> {
+    return this.request<{ _id: string; name: string }>(`/parties/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  async deleteParty(id: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/parties/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   // Materials API
-  async getMaterials(q?: string): Promise<{ _id: string; name: string }[]> {
+  async getMaterials(q?: string): Promise<{ _id: string; name: string; createdAt: string; updatedAt: string }[]> {
     const queryParams = new URLSearchParams();
     if (q) {
       queryParams.append('q', q);
     }
-    return this.request<{ _id: string; name: string }[]>(`/materials?${queryParams.toString()}`);
+    return this.request<{ _id: string; name: string; createdAt: string; updatedAt: string }[]>(`/materials?${queryParams.toString()}`);
   }
 
   async createMaterial(name: string): Promise<{ _id: string; name: string }> {
     return this.request<{ _id: string; name: string }>(`/materials`, {
       method: 'POST',
       body: JSON.stringify({ name }),
+    });
+  }
+
+  async updateMaterial(id: string, name: string): Promise<{ _id: string; name: string }> {
+    return this.request<{ _id: string; name: string }>(`/materials/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  async deleteMaterial(id: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/materials/${id}`, {
+      method: 'DELETE',
     });
   }
 

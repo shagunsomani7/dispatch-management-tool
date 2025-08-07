@@ -20,8 +20,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobile = false, onClose }) => {
       { path: '/trucks', label: 'Truck Dashboard', icon: '🚚' },
       { path: '/entry', label: 'Slab Entry', icon: '📝' },
       { path: '/slabs', label: 'View Database', icon: '🗄️' },
+      { path: '/parties-materials', label: 'Parties & Materials', icon: '👥' },
       { path: '/reports', label: 'Reports', icon: '📈' },
-      { path: '/user-management', label: 'User Management', icon: '👤' },
+      { path: '/users', label: 'User Management', icon: '👤' },
       { path: '/database-management', label: 'Database Management', icon: '🗑️' },
     ];
   } else {

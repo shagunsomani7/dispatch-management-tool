@@ -8,6 +8,8 @@ import Reports from './components/reports/Reports';
 import Login from './components/auth/Login';
 import UserManagement from './components/pages/UserManagement';
 import TruckDashboard from './components/pages/TruckDashboard';
+import Parties from './components/pages/Parties';
+import PartiesMaterials from './components/pages/PartiesMaterials';
 import DatabaseManagement from './components/pages/DatabaseManagement';
 import { apiService } from './services/api';
 
@@ -160,6 +162,20 @@ function App() {
             <RequireAuth requireAdmin>
               <Layout>
                 <TruckDashboard />
+              </Layout>
+            </RequireAuth>
+          } />
+          <Route path="/parties" element={
+            <RequireAuth requireAdmin>
+              <Layout>
+                <Parties />
+              </Layout>
+            </RequireAuth>
+          } />
+          <Route path="/parties-materials" element={
+            <RequireAuth requireAdmin>
+              <Layout>
+                <PartiesMaterials />
               </Layout>
             </RequireAuth>
           } />

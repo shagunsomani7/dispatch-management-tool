@@ -12,6 +12,9 @@
     .btn-secondary {
         @apply bg-gray-100 text-gray-700 font-medium py-2.5 px-4 rounded-lg cursor-pointer border border-gray-300 transition-colors;
     }
+    .btn-danger {
+        @apply bg-red-600 text-white font-medium py-2.5 px-4 rounded-lg cursor-pointer border-0 transition-colors;
+    }
     .input-field {
         @apply w-full px-3 py-2.5 border border-gray-300 rounded-lg;
     }
@@ -36,7 +39,8 @@
     /* Mobile-specific improvements */
     @media (max-width: 640px) {
         .btn-primary,
-        .btn-secondary {
+        .btn-secondary,
+        .btn-danger {
             @apply py-3 px-4 text-base;
         }
         .input-field {
